@@ -1,0 +1,99 @@
+# Detect text files automatically and normalize line endings to LF.
+* text=auto eol=lf
+
+# Explicit text formats
+*.bat text eol=lf
+*.cmd text eol=lf
+*.ps1 text eol=lf
+*.sh text eol=lf
+*.svg text eol=lf
+*.ts text eol=lf
+*.js text eol=lf
+*.json text eol=lf
+*.html text eol=lf
+*.css text eol=lf
+*.md text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+
+# Images
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.avif binary
+*.ico binary
+*.bmp binary
+*.tif binary
+*.tiff binary
+*.heic binary
+*.psd binary
+*.ai binary
+
+# Documents and office files
+*.pdf binary
+*.doc binary
+*.docx binary
+*.xls binary
+*.xlsx binary
+*.ppt binary
+*.pptx binary
+*.odt binary
+*.ods binary
+*.odp binary
+*.pages binary
+*.numbers binary
+*.key binary
+
+# Archives and compressed files
+*.zip binary
+*.7z binary
+*.rar binary
+*.tar binary
+*.gz binary
+*.bz2 binary
+*.xz binary
+*.lzo binary
+*.zst binary
+
+# Audio and video
+*.mp3 binary
+*.wav binary
+*.flac binary
+*.ogg binary
+*.mp4 binary
+*.mov binary
+*.avi binary
+*.mkv binary
+*.webm binary
+
+# Fonts
+*.ttf binary
+*.otf binary
+*.woff binary
+*.woff2 binary
+*.eot binary
+
+# Executables, libraries, and compiled artifacts
+*.exe binary
+*.dll binary
+*.so binary
+*.dylib binary
+*.a binary
+*.lib binary
+*.o binary
+*.obj binary
+*.class binary
+*.jar binary
+*.war binary
+*.wasm binary
+
+# Databases and other binary data
+*.db binary
+*.sqlite binary
+*.sqlite3 binary
+*.bin binary
+*.dat binary
+*.pkl binary
+*.pyc binary

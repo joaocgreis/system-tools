@@ -1,0 +1,135 @@
+# Operating systems
+.DS_Store
+.AppleDouble
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Editors and IDEs
+.idea/
+.vscode/
+*.code-workspace
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.swp
+*.swo
+*~
+
+# Logs, temporary files, and local configuration
+*.log
+logs/
+tmp/
+temp/
+*.tmp
+*.temp
+*.bak
+*.orig
+.env
+.env.*
+!.env.example
+!.env.sample
+
+# Test coverage and reports
+coverage/
+.coverage
+.nyc_output/
+htmlcov/
+test-results/
+
+# Node.js / JavaScript / TypeScript
+node_modules/
+.npm/
+.yarn/cache/
+.yarn/unplugged/
+.yarn/build-state.yml
+.yarn/install-state.gz
+.pnpm-store/
+.pnp.*
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.next/
+.nuxt/
+.svelte-kit/
+.parcel-cache/
+.turbo/
+.vite/
+dist/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.python-version
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.nox/
+.hypothesis/
+*.egg-info/
+.eggs/
+build/
+site/
+
+# Rust
+target/
+**/*.rs.bk
+
+# Go
+*.test
+*.out
+go.work
+go.work.sum
+
+# C# / .NET
+bin/
+obj/
+TestResults/
+packages/
+*.nupkg
+*.snupkg
+artifacts/
+
+# Java / Kotlin / JVM
+.gradle/
+*.class
+*.jar
+*.war
+*.ear
+
+# C / C++ / build systems
+CMakeFiles/
+CMakeCache.txt
+cmake-build-*/
+Makefile.in
+compile_commands.json
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.dylib
+*.dll
+*.exe
+
+# Ruby, PHP, and Terraform
+.bundle/
+vendor/bundle/
+.terraform/
+*.tfstate
+*.tfstate.*
+.terraform.lock.hcl
+
+# Local databases and caches
+*.sqlite
+*.sqlite3
+*.db
+*.cache
+.cache/
