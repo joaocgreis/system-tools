@@ -1,0 +1,376 @@
+#!/bin/sh
+':' //; STANDALONE_SCRIPT_NAME="$0" exec node --input-type=module-typescript - "$@" < "$0"
+':' // Runtime requirements: Node.js 22.18+ and erasable TypeScript syntax only; GNU-compatible date on PATH.
+':' // Development validation: TypeScript 5.8+ with strict --erasableSyntaxOnly checking; use scripts/typecheck-cli.
+
+import { execFile } from 'node:child_process';
+import { open, stat } from 'node:fs/promises';
+import type { FileHandle } from 'node:fs/promises';
+import { basename, join } from 'node:path';
+import { parseArgs } from 'node:util';
+
+const ALPHABET = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
+const FIRST_YEAR = 2000;
+const LAST_YEAR = FIRST_YEAR + ALPHABET.length - 1;
+const DATE_TIMEOUT_MS = 5000;
+const SCRIPT_NAME = basename(process.env['STANDALONE_SCRIPT_NAME'] ?? 'cdate');
+const INPUT_FORMATS = ['auto', 'ymd', 'mdy', 'dmy', 'unix', 'unix-ms', 'date', 'javascript'] as const;
+const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+const HELP = `cdate encodes a calendar date as three case-sensitive characters.
+Years 2000-2061 use 0-9, A-Z, then a-z; months and days use the same alphabet.
+With no input, encode today. Local time is the default, as with date.
+
+Usage: ./cdate [OPTIONS] [DATE OR TIMESTAMP ...]
+
+Options:
+  -h, --help                 Show this help and exit.
+  -V, --version              Show the command version and exit.
+  -d, --debug                Write a private execution log in the current directory.
+      --date STRING          Supply input instead of positional words.
+  -i, --input-format FORMAT  auto (default), ymd, mdy, dmy, unix, unix-ms,
+                            date (system parser), or javascript (Date.parse).
+  -r, --reference FILE       Encode the file's last modification date.
+  -u, --utc, --universal     Select UTC for unzoned inputs and the output date.
+  -l, --local                Explicitly use the system/TZ local time zone.
+  -z, --timezone ZONE        Use a named IANA time zone, e.g. America/New_York.
+
+Examples:
+  ./cdate 2010-01-11
+  ./cdate 20100111
+  ./cdate January 11, 2010
+  ./cdate -u 2010-01-11T13:41:54Z
+  ./cdate --input-format dmy 11/01/2010
+  ./cdate --input-format unix-ms 1263217314000
+
+Auto detects ISO dates/times, YYYYMMDD, English dates, standard date and
+JavaScript date strings, @Unix seconds, 10-digit seconds and 13-digit
+milliseconds. Numeric dates with the year last use day/month when the first
+field exceeds 12; otherwise month/day. Use mdy or dmy to disambiguate.
+Unzoned calendar input uses the selected zone. An explicit offset determines
+the instant, which is then converted to the selected zone. javascript mode
+uses Date.parse's UTC rule for ISO date-only input after calendar validation.
+Use -- before a positional input beginning with a hyphen.
+
+Invalid calendars, malformed input, duplicate/conflicting options, and output
+dates outside 2000-01-01 through 2061-12-31 fail without a compact result.
+No system clock changes or network requests are made. Debug logs contain input
+and paths, have mode 0600, and use _YYYYMMDD_HHMMSS_cdate.log without overwrite.
+Help and version do not read reference files or create logs.
+`;
+
+type InputFormat = typeof INPUT_FORMATS[number];
+interface Calendar { year: number; month: number; day: number }
+interface Options {
+  help: boolean;
+  version: boolean;
+  debug: boolean;
+  input: string | undefined;
+  inputFormat: InputFormat;
+  reference: string | undefined;
+  zone: string | undefined;
+}
+interface NormalizedInput { value: string; decision: string }
+
+let debugFile: FileHandle | undefined;
+
+function fail(message: string): never { throw new Error(message); }
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+function errorDetails(error: unknown): unknown {
+  return error instanceof Error
+    ? { name: error.name, message: error.message, stack: error.stack, cause: error.cause === undefined ? null : errorDetails(error.cause) }
+    : { rejection: String(error) };
+}
+async function writeAndFlush(stream: typeof process.stdout | typeof process.stderr, text: string): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    stream.write(text, (error) => { if (error) reject(error); else resolve(); });
+  });
+}
+async function record(step: string, details: unknown): Promise<void> {
+  if (debugFile) await debugFile.writeFile(`${new Date().toISOString()} ${step}\n${JSON.stringify(details, null, 2)}\n`);
+}
+function pad(value: number): string { return String(value).padStart(2, '0'); }
+async function startDebug(): Promise<void> {
+  const now = new Date();
+  const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+  const safeName = SCRIPT_NAME.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const path = join(process.cwd(), `_${stamp}_${safeName}.log`);
+  debugFile = await open(path, 'wx', 0o600);
+  await record('Environment and invocation', {
+    arguments: process.argv.slice(2), cwd: process.cwd(), runtime: process.version, executable: SCRIPT_NAME,
+    log: path, TZ: process.env['TZ'] ?? null, LANG: process.env['LANG'] ?? null,
+    sensitivity: 'Contains supplied date strings and file paths. No credentials or network traffic are collected.',
+  });
+  await writeAndFlush(process.stderr, `${SCRIPT_NAME}: debug log: ${path}\n`);
+}
+
+function validateCalendar({ year, month, day }: Calendar): void {
+  if (!Number.isSafeInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) fail('Calendar fields must be integers');
+  if (month < 1 || month > 12) fail(`Invalid calendar month: ${month}`);
+  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const lengths = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  const length = lengths[month - 1];
+  if (length === undefined || day < 1 || day > length) fail(`Invalid calendar date: ${year}-${pad(month)}-${pad(day)}`);
+}
+function calendarText(calendar: Calendar): string {
+  return `${String(calendar.year).padStart(4, '0')}-${pad(calendar.month)}-${pad(calendar.day)}`;
+}
+function encode(calendar: Calendar): string {
+  validateCalendar(calendar);
+  if (calendar.year < FIRST_YEAR || calendar.year > LAST_YEAR) fail(`Date ${calendarText(calendar)} cannot be represented; supported range is 2000-01-01 through 2061-12-31`);
+  const year = ALPHABET[calendar.year - FIRST_YEAR];
+  const month = ALPHABET[calendar.month];
+  const day = ALPHABET[calendar.day];
+  if (year === undefined || month === undefined || day === undefined) fail('Encoding invariant failed');
+  return `${year}${month}${day}`;
+}
+
+function readOptions(): Options {
+  const { values, positionals, tokens } = parseArgs({
+    args: process.argv.slice(2), strict: true, allowPositionals: true, tokens: true,
+    options: {
+      help: { type: 'boolean', short: 'h' }, version: { type: 'boolean', short: 'V' },
+      debug: { type: 'boolean', short: 'd' }, date: { type: 'string' },
+      'input-format': { type: 'string', short: 'i' }, reference: { type: 'string', short: 'r' },
+      utc: { type: 'boolean', short: 'u' }, universal: { type: 'boolean' },
+      local: { type: 'boolean', short: 'l' }, timezone: { type: 'string', short: 'z' },
+    },
+  });
+  const seen = new Set<string>();
+  for (const token of tokens) {
+    if (token.kind !== 'option') continue;
+    const name = token.name === 'universal' ? 'utc' : token.name;
+    if (seen.has(name)) fail(`Option --${name} was specified more than once`);
+    seen.add(name);
+  }
+  // Help is a side-effect-free path, even when operational options need input.
+  if (values.help || values.version) return {
+    help: values.help ?? false, version: values.version ?? false, debug: false,
+    input: undefined, inputFormat: 'auto', reference: undefined, zone: undefined,
+  };
+  const utc = values.utc || values.universal;
+  if (Number(Boolean(utc)) + Number(Boolean(values.local)) + Number(values.timezone !== undefined) > 1) fail('Choose only one of --utc, --local, or --timezone');
+  if (values.timezone !== undefined) {
+    try { new Intl.DateTimeFormat('en', { timeZone: values.timezone }); }
+    catch (error: unknown) { throw new Error(`Invalid IANA time zone: ${values.timezone}`, { cause: error }); }
+  }
+  if (values.date !== undefined && positionals.length > 0) fail('Use either --date or positional date words');
+  const input = values.date ?? (positionals.length > 0 ? positionals.join(' ') : undefined);
+  if (values.reference !== undefined && input !== undefined) fail('Use either --reference or a date input');
+  if (values.reference === '') fail('--reference requires a nonempty file path');
+  const requested = values['input-format'] ?? 'auto';
+  const inputFormat = INPUT_FORMATS.find((format) => format === requested);
+  if (inputFormat === undefined) fail(`Unknown input format ${requested}; choose ${INPUT_FORMATS.join(', ')}`);
+  if (inputFormat !== 'auto' && input === undefined) fail('--input-format requires a date input');
+  return { help: false, version: false, debug: values.debug ?? false, input, inputFormat,
+    reference: values.reference, zone: utc ? 'UTC0' : values.timezone };
+}
+
+async function runDate(value: string | undefined, zone: string | undefined): Promise<string> {
+  const args = [...(value === undefined ? [] : [`--date=${value}`]), '+%Y-%m-%d %H:%M:%S'];
+  await record('Parse and select the calendar day', { command: 'date', arguments: args, zone: zone ?? 'inherited system/TZ', reason: 'Use the system date parser and its time-zone rules before checking the compact range.' });
+  const output = await new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
+    execFile('date', args, { encoding: 'utf8', timeout: DATE_TIMEOUT_MS, maxBuffer: 1024 * 1024,
+      env: zone === undefined ? process.env : { ...process.env, TZ: zone } }, (error, stdout, stderr) => {
+      if (error) reject(new Error(`date could not parse the input: ${stderr.trim() || error.message}`, { cause: error }));
+      else resolve({ stdout, stderr });
+    });
+  });
+  await record('System parser result', output);
+  if (output.stderr) await writeAndFlush(process.stderr, output.stderr);
+  const selected = output.stdout.trim();
+  const expected = value === undefined ? null : /^(\d{4}-\d{2}-\d{2})(?:[T ](\d{2}:\d{2}:\d{2})(?:\.\d+)?)?$/.exec(value);
+  if (expected && selected !== `${expected[1]} ${expected[2] ?? '00:00:00'}`) {
+    fail(`The local calendar/clock time does not exist in the selected zone: ${value}; supply an explicit offset or use --utc`);
+  }
+  await record('Local clock validation', { expected: expected ? `${expected[1]} ${expected[2] ?? '00:00:00'}` : null,
+    selected, reason: 'An unzoned absolute clock must round-trip without a DST or calendar adjustment.' });
+  return selected.split(' ')[0] ?? fail('Missing calendar output from date');
+}
+
+function epochInput(input: string, milliseconds: boolean): NormalizedInput {
+  const precision = milliseconds ? 6 : 9;
+  const match = /^([+-]?)(\d+)(?:\.(\d+))?$/.exec(input);
+  if (!match) fail(`Invalid ${milliseconds ? 'millisecond' : 'second'} Unix timestamp: ${input}`);
+  const fraction = match[3] ?? '';
+  if (fraction.length > precision) fail(`Unix timestamp supports at most ${precision} fractional digits`);
+  const scale = milliseconds ? 1_000_000n : 1_000_000_000n;
+  let nanoseconds = BigInt(match[2] ?? fail('Missing timestamp digits')) * scale + BigInt(fraction.padEnd(precision, '0'));
+  if (match[1] === '-') nanoseconds = -nanoseconds;
+  const sign = nanoseconds < 0n ? '-' : '';
+  const magnitude = nanoseconds < 0n ? -nanoseconds : nanoseconds;
+  return { value: `@${sign}${magnitude / 1_000_000_000n}.${String(magnitude % 1_000_000_000n).padStart(9, '0')}`,
+    decision: `Treat input as Unix ${milliseconds ? 'milliseconds' : 'seconds'}, with exact decimal arithmetic.` };
+}
+
+function normalizeClock(value: string): string {
+  const meridiem = /^(\d{4}-\d{2}-\d{2})[Tt ](\d{1,2}):(\d{2})(?::(\d{2})([.,]\d{1,9})?)?\s*(AM|PM)(?:\s+(.*))?$/i.exec(value);
+  if (meridiem) {
+    const hour = Number(meridiem[2]);
+    if (hour < 1 || hour > 12) fail('Invalid 12-hour clock time');
+    const converted = hour % 12 + ((meridiem[6] ?? '').toUpperCase() === 'PM' ? 12 : 0);
+    value = `${meridiem[1]}T${pad(converted)}:${meridiem[3]}:${meridiem[4] ?? '00'}${meridiem[5] ?? ''}${meridiem[7] ? ` ${meridiem[7]}` : ''}`;
+  }
+  const match = /^(\d{4}-\d{2}-\d{2})[Tt ](\d{1,2})(?::(\d{2})(?::(\d{2})([.,]\d{1,9})?)?)?\s*([Zz]|[+-]\d{2}(?::?\d{2})?(?::?\d{2})?)?$/.exec(value);
+  if (!match) return value; // Other clock/relative syntax belongs to the system parser.
+  const hour = Number(match[2]);
+  const minute = Number(match[3] ?? '0');
+  const second = Number(match[4] ?? '0');
+  const fraction = (match[5] ?? '').replace(',', '.');
+  if (hour > 24 || minute > 59 || second > 59 || (hour === 24 && (minute !== 0 || second !== 0 || /[1-9]/.test(fraction)))) fail('Invalid clock time; 24:00 is allowed only as the end of a day');
+  const offset = match[6] ?? '';
+  if (/^[+-]/.test(offset)) {
+    const digits = offset.slice(1).replaceAll(':', '').padEnd(6, '0');
+    if (Number(digits.slice(0, 2)) > 23 || Number(digits.slice(2, 4)) > 59 || Number(digits.slice(4, 6)) > 59) fail('Invalid numeric time-zone offset');
+  }
+  let day = match[1] ?? fail('Missing ISO calendar date');
+  if (hour === 24) {
+    const next = new Date(`${day}T00:00:00Z`);
+    next.setUTCDate(next.getUTCDate() + 1);
+    if (!Number.isFinite(next.getTime())) fail('Invalid end-of-day date');
+    day = next.toISOString().slice(0, 10);
+  }
+  // date -Ihours emits offsets such as +05; normalize those for parsers needing minutes.
+  const zone = /^[+-]\d{2}$/.test(offset) ? `${offset}:00` : offset.toUpperCase();
+  return `${day}T${pad(hour === 24 ? 0 : hour)}:${pad(minute)}:${pad(second)}${fraction}${zone}`;
+}
+
+function numericCalendar(input: string, order: 'auto' | 'ymd' | 'mdy' | 'dmy'): NormalizedInput | undefined {
+  let fields: string[];
+  let suffix: string;
+  const basic = /^(\d{8})((?:[Tt ,].*)?)$/.exec(input);
+  const separated = /^(\d{1,4})([-/.])(\d{1,2})\2(\d{1,4})((?:[Tt ,].*)?)$/.exec(input);
+  if (basic) {
+    const digits = basic[1] ?? fail('Missing basic calendar date');
+    fields = order === 'mdy' || order === 'dmy'
+      ? [digits.slice(0, 2), digits.slice(2, 4), digits.slice(4)]
+      : [digits.slice(0, 4), digits.slice(4, 6), digits.slice(6)];
+    suffix = basic[2] ?? '';
+  } else if (separated) {
+    fields = [separated[1] ?? '', separated[3] ?? '', separated[4] ?? ''];
+    suffix = separated[5] ?? '';
+  } else {
+    const reduced = /^(\d{4})(?:-(\d{1,2}))?$/.exec(input);
+    if (reduced && (order === 'auto' || order === 'ymd')) {
+      const calendar = { year: Number(reduced[1]), month: Number(reduced[2] ?? '1'), day: 1 };
+      validateCalendar(calendar);
+      return { value: calendarText(calendar), decision: 'Interpret the ISO year or year-month as its first calendar day in the selected zone.' };
+    }
+    return undefined;
+  }
+  const [first = '', middle = '', last = ''] = fields;
+  const detected = order === 'auto' ? (first.length === 4 ? 'ymd' : Number(first) > 12 ? 'dmy' : 'mdy') : order;
+  const yearText = detected === 'ymd' ? first : last;
+  if (yearText.length !== 4 && !(detected !== 'ymd' && yearText.length === 2)) fail('Numeric dates need a four-digit year, or a two-digit year in mdy/dmy form');
+  let year = Number(yearText);
+  if (yearText.length === 2) year += year <= 68 ? 2000 : 1900;
+  const calendar = { year, month: Number(detected === 'ymd' ? middle : detected === 'mdy' ? first : middle),
+    day: Number(detected === 'ymd' ? last : detected === 'mdy' ? middle : first) };
+  validateCalendar(calendar);
+  suffix = suffix.replace(/^,\s*/, ' ');
+  return { value: normalizeClock(calendarText(calendar) + suffix), decision: `Validate numeric calendar fields in ${detected} order before parsing the time or offset.` };
+}
+
+function javascriptString(input: string): NormalizedInput | undefined {
+  // Date.toString / toDateString: preserve GMT offset semantics rather than POSIX GMT signs.
+  const match = /^(?:Sun|Mon|Tue|Wed|Thu|Fri|Sat) (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2}) (\d{4})(?: (\d{2}:\d{2}:\d{2}) GMT([+-]\d{4})(?: \([^\r\n]*\))?)?$/.exec(input);
+  if (!match) return undefined;
+  const month = MONTHS.indexOf((match[1] ?? '').toLowerCase()) + 1;
+  const calendar = { year: Number(match[3]), month, day: Number(match[2]) };
+  validateCalendar(calendar);
+  return { value: match[4] === undefined ? calendarText(calendar)
+    : normalizeClock(`${calendarText(calendar)}T${match[4]}${match[5] ?? fail('Missing JavaScript GMT offset')}`),
+    decision: 'Recognize a standard JavaScript Date string and preserve its numeric offset; a date-only string is a calendar day.' };
+}
+
+function timeOnly(input: string): NormalizedInput | undefined {
+  const javascript = /^(\d{2}:\d{2}:\d{2}) GMT([+-]\d{4})(?: \([^\r\n]*\))?$/.exec(input);
+  if (javascript) return { value: `${javascript[1]} ${javascript[2]}`,
+    decision: 'Recognize Date.toTimeString, preserve its numeric offset, and use today because no calendar was supplied.' };
+  const meridiem = /^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)$/i.exec(input);
+  if (!meridiem) return undefined;
+  const hour = Number(meridiem[1]);
+  const minute = Number(meridiem[2]);
+  const second = Number(meridiem[3] ?? '0');
+  if (hour < 1 || hour > 12 || minute > 59 || second > 59) fail('Invalid 12-hour clock time');
+  return { value: `${pad(hour % 12 + ((meridiem[4] ?? '').toUpperCase() === 'PM' ? 12 : 0))}:${pad(minute)}:${pad(second)}`,
+    decision: 'Normalize a numeric locale time to a 24-hour clock on the current day.' };
+}
+
+function normalizeInput(raw: string, format: InputFormat): NormalizedInput {
+  const input = raw.trim().replace(/[\u200e\u200f\u061c]/g, '').replace(/[\u00a0\u202f]/g, ' ');
+  if (!input || /[\x00\r\n]/.test(input)) fail('Provide one nonempty date or timestamp without NUL or line breaks');
+  if (format === 'unix' || format === 'unix-ms') return epochInput(input.replace(/^@/, ''), format === 'unix-ms');
+  if (format === 'date') return { value: input, decision: 'Use the system date input grammar exactly, including its numeric and relative-date rules.' };
+  if (format === 'auto') {
+    if (input.startsWith('@')) return epochInput(input.slice(1), false);
+    if (/^[+-]?\d{10}(?:\.\d+)?$/.test(input)) return epochInput(input, false);
+    if (/^[+-]?\d{13}(?:\.\d+)?$/.test(input)) return epochInput(input, true);
+  }
+  const order = format === 'mdy' || format === 'dmy' || format === 'ymd' ? format : 'auto';
+  const calendar = numericCalendar(input, order);
+  if (calendar) return calendar;
+  if (format === 'mdy' || format === 'dmy' || format === 'ymd') fail(`Input does not match ${format} numeric calendar format`);
+  const javascript = javascriptString(input);
+  if (javascript) return javascript;
+  const clock = timeOnly(input);
+  if (clock) return clock;
+  // The system parser validates English calendar names, RFC strings, offsets,
+  // DST gaps and relative expressions. Never fall back from its rejection to
+  // JavaScript's permissive calendar rollover behavior.
+  return { value: input, decision: 'Delegate this date expression to the system date parser, which must accept it without calendar rollover.' };
+}
+
+async function main(): Promise<void> {
+  const options = readOptions();
+  if (options.help) { await writeAndFlush(process.stdout, HELP); return; }
+  if (options.version) { await writeAndFlush(process.stdout, 'cdate 1.0.0\n'); return; }
+  if (options.debug) await startDebug();
+  await record('Execution plan', { steps: ['Resolve input and validate calendar fields', 'Select the date in the requested zone', 'Check the 2000-2061 range', 'Encode and flush one result'], options });
+  let value: string | undefined;
+  if (options.reference !== undefined) {
+    await record('Read reference metadata', { path: options.reference, reason: 'Use the last modification instant without reading or changing file contents.' });
+    const metadata = await stat(options.reference, { bigint: true });
+    const milliseconds = metadata.mtimeNs / 1_000_000n;
+    value = epochInput(String(milliseconds), true).value;
+    await record('Reference metadata found', { mtimeNanoseconds: String(metadata.mtimeNs), next: 'Convert the instant to the selected zone.' });
+  } else if (options.input !== undefined) {
+    const normalized = normalizeInput(options.input, options.inputFormat);
+    await record('Input validation and interpretation', normalized);
+    value = normalized.value;
+    if (options.inputFormat === 'javascript') {
+      // Validate with the strict system parser first; Date.parse alone accepts Feb 30.
+      await runDate(value, options.zone);
+      if (options.zone !== undefined) process.env['TZ'] = options.zone;
+      const parsed = Date.parse(options.input);
+      if (!Number.isFinite(parsed)) fail('JavaScript Date.parse cannot parse this input');
+      value = new Date(parsed).toISOString();
+      await record('JavaScript date semantics selected', { instant: value, reason: 'Apply Date.parse semantics only after independent input validation.' });
+    }
+  } else {
+    await record('No input supplied', { next: 'Read the current day once from date in the selected zone.' });
+  }
+  const selected = await runDate(value, options.zone);
+  const match = /^([+-]?\d{4,})-(\d{2})-(\d{2})$/.exec(selected);
+  if (!match) fail(`Unexpected calendar output from date: ${selected}`);
+  const calendar = { year: Number(match[1]), month: Number(match[2]), day: Number(match[3]) };
+  const result = encode(calendar);
+  await record('Validated range and encoding', { calendar, alphabet: ALPHABET, result, reason: 'Every field fits its character and the calendar exists.' });
+  await writeAndFlush(process.stdout, `${result}\n`);
+  await record('Completed', { result, next: 'Close the private log and return success.' });
+}
+
+try {
+  await main();
+} catch (error: unknown) {
+  process.exitCode = 1;
+  try { await record('Failed', errorDetails(error)); }
+  catch (loggingError: unknown) { await writeAndFlush(process.stderr, `${SCRIPT_NAME}: could not record failure: ${errorMessage(loggingError)}\n`); }
+  await writeAndFlush(process.stderr, `${SCRIPT_NAME}: ${errorMessage(error)}\n`);
+} finally {
+  if (debugFile) {
+    try { await debugFile.close(); }
+    catch (error: unknown) { process.exitCode = 1; await writeAndFlush(process.stderr, `${SCRIPT_NAME}: could not close debug log: ${errorMessage(error)}\n`); }
+  }
+}

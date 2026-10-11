@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>cdate and ddate | Interactive walkthrough</title>
+  <style>
+    :root { color-scheme: light; --bg:#f4f6f3; --panel:#ffffff; --panel-2:#eaf0e9; --text:#182b24; --muted:#4d6559; --line:#cbd7cd; --accent:#176543; --focus:#2465ad; --code:#10221a; --code-text:#e5f3e8; --shadow:0 14px 40px rgb(30 60 40 / 8%); }
+    @media (prefers-color-scheme:dark) { :root:not([data-theme]) { color-scheme:dark; --bg:#101713; --panel:#18231c; --panel-2:#233328; --text:#e6f0e8; --muted:#afc5b5; --line:#3e5444; --accent:#91dfaf; --focus:#90bdff; --code:#090f0b; --code-text:#e5f3e8; --shadow:0 14px 40px rgb(0 0 0 / 20%); } }
+    :root[data-theme="dark"] { color-scheme:dark; --bg:#101713; --panel:#18231c; --panel-2:#233328; --text:#e6f0e8; --muted:#afc5b5; --line:#3e5444; --accent:#91dfaf; --focus:#90bdff; --code:#090f0b; --code-text:#e5f3e8; --shadow:0 14px 40px rgb(0 0 0 / 20%); }
+    :root[data-theme="light"] { color-scheme:light; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--bg); color:var(--text); font:16px/1.6 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    button,input,select { font:inherit; }
+    button,select,input { border:1px solid var(--line); border-radius:8px; background:var(--panel); color:var(--text); padding:.55rem .8rem; }
+    button { cursor:pointer; }
+    button:hover { border-color:var(--accent); background:var(--panel-2); }
+    button:disabled { opacity:.45; cursor:default; }
+    :focus-visible { outline:3px solid var(--focus); outline-offset:3px; }
+    a { color:var(--accent); }
+    header,main,footer { max-width:1180px; margin:0 auto; padding:1.6rem clamp(1rem,4vw,3rem); }
+    .topline,.pager,.terminal-heading { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:1rem; }
+    .eyebrow { color:var(--muted); font-size:.78rem; letter-spacing:.12em; text-transform:uppercase; }
+    h1 { font-size:clamp(2.1rem,5vw,3.6rem); line-height:1.12; letter-spacing:-.045em; margin:1.6rem 0 1rem; max-width:760px; }
+    h2 { font-size:clamp(1.3rem,2vw,1.7rem); line-height:1.25; margin:0 0 1rem; }
+    h3 { font-size:1rem; margin:1rem 0 .5rem; }
+    p { max-width:70ch; margin:0 0 1rem; }
+    .intro { max-width:760px; color:var(--muted); font-size:1.12rem; }
+    .calculator,.terminal,.step { background:var(--panel); border:1px solid var(--line); border-radius:16px; box-shadow:var(--shadow); padding:clamp(1rem,3vw,1.8rem); min-width:0; }
+    .calculator { display:grid; grid-template-columns:1fr 1fr; gap:1.5rem; margin-bottom:1.5rem; }
+    .calculator h2,.calculator .note { grid-column:1/-1; }
+    .calculator h2 { margin:0; }
+    label { display:block; font-size:.9rem; color:var(--muted); margin-bottom:.35rem; }
+    .topline label,.terminal-heading label { display:inline; margin:0 .5rem 0 0; }
+    .calculator input { width:100%; }
+    .code-output { display:flex; gap:.6rem; margin:1rem 0 .5rem; }
+    .code-output span { display:grid; place-items:center; min-width:3.3rem; height:4.4rem; background:var(--panel-2); border:1px solid var(--line); border-radius:10px; font:2.7rem/1 ui-monospace,SFMono-Regular,Consolas,monospace; }
+    output { display:block; margin:.9rem 0; min-height:1.6rem; }
+    .note { font-size:.85rem; color:var(--muted); margin:0; }
+    .flow { display:flex; flex-wrap:wrap; gap:.55rem; margin:0 0 2rem; }
+    .flow button { flex:1 1 120px; font-size:.85rem; text-align:left; }
+    .reading { display:grid; grid-template-columns:210px minmax(0,1fr); gap:1.5rem; align-items:start; }
+    nav { position:sticky; top:1rem; display:grid; gap:.45rem; }
+    nav button { text-align:left; font-size:.87rem; padding:.7rem .8rem; }
+    nav button[aria-current="step"] { border-color:var(--accent); box-shadow:inset 3px 0 var(--accent); font-weight:650; background:var(--panel-2); }
+    .step-number { color:var(--muted); font-size:.8rem; margin-bottom:.5rem; }
+    .callout { background:var(--panel-2); border-left:3px solid var(--accent); padding:.9rem 1rem; margin:1rem 0; }
+    .snippet { margin:1rem 0; min-width:0; }
+    .snippet button { font-size:.8rem; margin:0 0 .45rem; }
+    pre { margin:0; overflow:auto; border-radius:10px; background:var(--code); color:var(--code-text); padding:1rem; font: .82rem/1.65 ui-monospace,SFMono-Regular,Consolas,monospace; max-width:100%; tab-size:2; }
+    code { font-family:ui-monospace,SFMono-Regular,Consolas,monospace; overflow-wrap:anywhere; }
+    pre code { overflow-wrap:normal; }
+    .pager { border-top:1px solid var(--line); padding-top:1rem; margin-top:1.5rem; }
+    .pager span { font-size:.85rem; color:var(--muted); }
+    .terminal { margin-top:2rem; }
+    .terminal-heading { margin-bottom:1rem; }
+    .terminal-heading h2 { margin:0; }
+    #terminal-output { white-space:pre-wrap; overflow-wrap:anywhere; max-height:32rem; }
+    #debug-preview { margin-top:1rem; }
+    #debug-preview summary { cursor:pointer; margin-bottom:.7rem; }
+    .quiz { margin:1rem 0; }
+    .quiz label { color:var(--text); }
+    .quiz select { width:100%; min-width:0; }
+    .quiz button { margin-top:.6rem; }
+    #status { min-height:1.5rem; margin-top:1rem; font-size:.85rem; color:var(--muted); }
+    footer { font-size:.85rem; color:var(--muted); }
+    [hidden] { display:none !important; }
+    @media (max-width:800px) {
+      .reading { grid-template-columns:minmax(0,1fr); }
+      nav { position:static; display:flex; overflow:auto; padding:.25rem .25rem .7rem; }
+      nav button { flex:0 0 auto; }
+      .calculator { grid-template-columns:minmax(0,1fr); }
+      .flow button { flex-basis:45%; }
+      .terminal-heading select { max-width:100%; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="topline"><span class="eyebrow">QAC / date tools</span><div><label for="theme-select">Theme</label><select id="theme-select"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select></div></div>
+    <h1>One calendar day.<br>Three characters.</h1>
+    <p class="intro"><code>cdate</code> encodes dates from 2000 through 2061. <code>ddate</code> decodes them and uses your installed <code>date</code> command to format the result. This offline guide explains the validation and time-zone choices behind both commands.</p>
+  </header>
+  <main>
+    <section class="calculator" aria-labelledby="calculator-title">
+      <h2 id="calculator-title">Try the encoding</h2>
+      <div><label for="calendar-input">Calendar date, 2000-01-01 to 2061-12-31</label><input id="calendar-input" type="date" min="2000-01-01" max="2061-12-31" value="2010-01-11"><div class="code-output" aria-hidden="true"><span id="year-character">A</span><span id="month-character">1</span><span id="day-character">B</span></div><output id="encode-result" aria-live="polite">2010-01-11 encodes as A1B.</output></div>
+      <div><label for="compact-input">Compact date, case-sensitive</label><input id="compact-input" type="text" value="A1B" maxlength="3" spellcheck="false" autocomplete="off"><output id="decode-result" aria-live="polite">A1B decodes as 2010-01-11.</output><p class="note">Year index 10 gives A. Month 1 gives 1. Day 11 gives B. Uppercase A and lowercase a describe different years.</p></div>
+      <p class="note">This calculator simulates the calendar encoding only. It does not run a command, parse timestamps, access files, or make network requests.</p>
+    </section>
+    <div class="flow" aria-label="Execution flow"><button data-jump="0">1. Encode fields</button><button data-jump="1">2. Parse options</button><button data-jump="2">3. Validate input</button><button data-jump="3">4. Select the day</button><button data-jump="5">6. Format output</button><button data-jump="6">7. Handle failures</button></div>
+    <div class="reading">
+      <nav id="section-nav" aria-label="Walkthrough steps"></nav>
+      <div>
+        <section class="step" data-step="Encoding">
+          <div class="step-number">Step 1 / encoding</div><h2>The alphabet defines the range</h2>
+          <p>Each position stores its own field using <code>0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz</code>. The year index is the year minus 2000; months and days use their ordinary numbers. With 62 year characters, the final year is 2061.</p>
+          <div class="snippet"><button data-copy="encoding">Copy code excerpt</button><pre><code data-snippet="encoding"></code></pre></div>
+          <div class="callout">The minimum code is <code>011</code> and the maximum is <code>zCV</code>. Years outside the range cause an error. The year never wraps into an earlier century.</div>
+        </section>
+        <section class="step" data-step="Arguments">
+          <div class="step-number">Step 2 / arguments</div><h2>Parse every argument and reject conflicts</h2>
+          <p>Node's <code>parseArgs</code> from <code>node:util</code> recognizes options and positional words. Strict mode rejects unknown flags. Tokens preserve duplicate occurrences, including aliases such as <code>-u</code> and <code>--utc</code>. A separate validation step rejects contradictory time-zone or formatting options.</p>
+          <div class="snippet"><button data-copy="arguments">Copy code excerpt</button><pre><code data-snippet="arguments"></code></pre></div>
+          <p><code>-h</code> and <code>--help</code> return before operational file access, subprocesses, and log creation. The terminal below includes the actual authored help text for both commands.</p>
+          <div class="callout"><code>-d</code> means debug. Use the long-only <code>--date</code> option to supply an input. For <code>ddate</code>, attach optional ISO precision as <code>-Iseconds</code> or <code>--iso-8601=seconds</code>.</div>
+        </section>
+        <section class="step" data-step="Input validation">
+          <div class="step-number">Step 3 / input and files</div><h2>Reject impossible calendar fields</h2>
+          <p>Numeric dates are checked before the system parser sees them. Leap-year rules determine the month length, so February 30 cannot silently become a March date. Named English dates and relative expressions go through the installed parser. JavaScript parsing is opt-in and follows independent validation.</p>
+          <div class="snippet"><button data-copy="calendar">Copy code excerpt</button><pre><code data-snippet="calendar"></code></pre></div>
+          <p><code>cdate --reference FILE</code> reads only file metadata and encodes its modification date. The commands have no credentials or HTTP contract. No API fields, provider limits, authorization headers, or cookies are collected.</p>
+          <div class="callout">When both fields can be months, automatic year-last numeric input uses month/day order. Select <code>-i dmy</code> or <code>-i mdy</code> when the order matters.</div>
+        </section>
+        <section class="step" data-step="Time zones">
+          <div class="step-number">Step 4 / system parser</div><h2>Select a calendar day in the requested zone</h2>
+          <p>Local time follows the system and <code>TZ</code>. <code>-u</code> selects UTC; <code>-z</code> accepts a named IANA zone. An explicit input offset identifies an instant, which is converted to the selected zone before encoding. Subprocess arguments go directly to <code>date</code>, without shell interpolation.</p>
+          <div class="snippet"><button data-copy="parser">Copy code excerpt</button><pre><code data-snippet="parser"></code></pre></div>
+          <div class="callout"><code>2010-01-11T00:30:00Z</code> is January 10 in Los Angeles. An unzoned date-only input stays on January 11. With <code>-i javascript</code>, ISO date-only input instead follows <code>Date.parse</code>'s UTC interpretation.</div>
+          <p>Each subprocess has a five-second timeout. Unzoned absolute clock input must round-trip without an adjustment, which catches missing local times during a DST change.</p>
+        </section>
+        <section class="step" data-step="Decoding">
+          <div class="step-number">Step 5 / decoding</div><h2>Three valid characters must also make a valid date</h2>
+          <p><code>ddate</code> checks the code's length and alphabet, then validates month and day indexes. It applies the same Gregorian leap-year rule. A year character can be lowercase, but month and day indexes never reach the lowercase part of the alphabet.</p>
+          <div class="snippet"><button data-copy="decoding">Copy code excerpt</button><pre><code data-snippet="decoding"></code></pre></div>
+          <div class="quiz"><label for="quiz-answer">Can 2062-01-01 be encoded?</label><select id="quiz-answer"><option value="">Choose an answer</option><option value="wrap">Yes, by wrapping the year back to 0</option><option value="error">No, it must fail outside the year range</option></select><button id="quiz-reveal">Check answer</button><output id="quiz-result" aria-live="polite"></output></div>
+          <div class="callout"><code>A2T</code> is invalid because 2010 was not a leap year. <code>C2T</code> is valid and decodes to 2012-02-29.</div>
+        </section>
+        <section class="step" data-step="Formatting">
+          <div class="step-number">Step 6 / output</div><h2>Format the decoded date at midnight</h2>
+          <p>The code contains no time or original zone. <code>ddate</code> assigns midnight in the selected zone, verifies that it exists, then delegates formatting to <code>date</code>. This preserves percent directives, padding and locale modifiers, ISO output, and RFC output available in your installed command.</p>
+          <div class="snippet"><button data-copy="formatting">Copy code excerpt</button><pre><code data-snippet="formatting"></code></pre></div>
+          <div class="callout">Use <code>./ddate A1B +%F</code> for a stable calendar result. Time fields describe midnight; <code>%s</code> describes that midnight's epoch instant. A skipped local day fails rather than shifting to another day.</div>
+          <p>Normal stdout contains only the primary result. Errors and the log-path announcement use stderr. Every standard-stream write is awaited through its write callback.</p>
+        </section>
+        <section class="step" data-step="Failures and logs">
+          <div class="step-number">Step 7 / failures and debug</div><h2>Keep diagnostics in a private log</h2>
+          <p><code>-d</code> or <code>--debug</code> creates <code>_YYYYMMDD_HHMMSS_SCRIPTNAME.log</code> in the current directory, using local time and the executable basename. Exclusive creation and mode <code>0600</code> protect an existing log from replacement and restrict its permissions.</p>
+          <div class="snippet"><button data-copy="failure">Copy code excerpt</button><pre><code data-snippet="failure"></code></pre></div>
+          <p>The log records the plan, steps, findings, reasons for subsequent actions, validation, completion, and failures with causes. These tools perform no HTTP requests. Logs contain supplied date strings, paths, or formatting expressions and should be handled as private data.</p>
+          <div class="callout">Invalid input and unexpected errors exit with status 1. A failure while recording another failure is reported too. A late log or output failure can follow a printed result, so callers must check exit status.</div>
+        </section>
+        <section class="step" data-step="Verification">
+          <div class="step-number">Step 8 / runtime and verification</div><h2>Run the executable and check the TypeScript separately</h2>
+          <p>The extensionless files start with a shell/TypeScript bootstrap. The shell redirects the same source file to Node's stdin, forwards <code>"$@"</code>, and replaces itself using <code>exec</code>. <code>STANDALONE_SCRIPT_NAME</code> preserves the real command name. The remaining comments document maintainer requirements.</p>
+          <div class="snippet"><button data-copy="bootstrap">Copy bootstrap</button><pre><code data-snippet="bootstrap"></code></pre></div>
+          <p>Node.js 22.18+ strips erasable TypeScript syntax using <code>--input-type=module-typescript</code>. Runtime execution does not typecheck. The skill's bundled checker uses a private temporary <code>.ts</code> copy because the compiler requires a recognized suffix. Both commands must pass that strict check after edits.</p>
+          <div class="snippet"><button data-copy="verification">Copy verification commands</button><pre><code data-snippet="verification"></code></pre></div>
+          <div class="callout">The behavior suite checks all 22,646 valid calendar days and all 238,328 three-character codes, plus parser, formatting, zone, error, help, reference, and logging paths. ShellCheck applies to an extracted shell bootstrap, while the complete file is checked as TypeScript.</div>
+        </section>
+        <div class="pager"><button id="previous">Previous</button><span id="progress" aria-live="polite">Step 1 of 8</span><button id="next">Next</button></div>
+      </div>
+    </div>
+    <section class="terminal" aria-labelledby="terminal-title"><div class="terminal-heading"><h2 id="terminal-title">Simulated terminal</h2><div><label for="terminal-mode">Example</label><select id="terminal-mode"><option value="encode">cdate result</option><option value="decode">ddate result</option><option value="debug">Debug run and log</option><option value="failure">Invalid input</option><option value="help-cdate">cdate --help</option><option value="help-ddate">ddate --help</option></select></div></div><pre id="terminal-output" aria-live="polite"></pre><details id="debug-preview" open hidden><summary>Simulated private log file</summary><pre id="debug-output"></pre></details><p class="note">Examples are simulated. The HTML never launches the executables or accesses your files.</p></section>
+    <div id="status" role="status" aria-live="polite"></div>
+  </main>
+  <footer>cdate and ddate · Gregorian dates, 2000–2061 · <a href="README.md">Read the full README</a> · All assets are embedded. No network connection is required.</footer>
+  <script>
+    "use strict";
+    const snippets = {"encoding": "function encode(calendar: Calendar): string {\n  validateCalendar(calendar);\n  if (calendar.year \u003c FIRST_YEAR || calendar.year > LAST_YEAR) fail(`Date ${calendarText(calendar)} cannot be represented; supported range is 2000-01-01 through 2061-12-31`);\n  const year = ALPHABET[calendar.year - FIRST_YEAR];\n  const month = ALPHABET[calendar.month];\n  const day = ALPHABET[calendar.day];\n  if (year === undefined || month === undefined || day === undefined) fail('Encoding invariant failed');\n  return `${year}${month}${day}`;\n}", "arguments": "  const { values, positionals, tokens } = parseArgs({\n    args: process.argv.slice(2), strict: true, allowPositionals: true, tokens: true,\n    options: {\n      help: { type: 'boolean', short: 'h' }, version: { type: 'boolean', short: 'V' },\n      debug: { type: 'boolean', short: 'd' }, date: { type: 'string' },\n      'input-format': { type: 'string', short: 'i' }, reference: { type: 'string', short: 'r' },\n      utc: { type: 'boolean', short: 'u' }, universal: { type: 'boolean' },\n      local: { type: 'boolean', short: 'l' }, timezone: { type: 'string', short: 'z' },\n    },\n  });", "calendar": "function validateCalendar({ year, month, day }: Calendar): void {\n  if (!Number.isSafeInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) fail('Calendar fields must be integers');\n  if (month \u003c 1 || month > 12) fail(`Invalid calendar month: ${month}`);\n  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);\n  const lengths = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];\n  const length = lengths[month - 1];\n  if (length === undefined || day \u003c 1 || day > length) fail(`Invalid calendar date: ${year}-${pad(month)}-${pad(day)}`);\n}", "parser": "  const output = await new Promise\u003c{ stdout: string; stderr: string }>((resolve, reject) => {\n    execFile('date', args, { encoding: 'utf8', timeout: DATE_TIMEOUT_MS, maxBuffer: 1024 * 1024,\n      env: zone === undefined ? process.env : { ...process.env, TZ: zone } }, (error, stdout, stderr) => {\n      if (error) reject(new Error(`date could not parse the input: ${stderr.trim() || error.message}`, { cause: error }));\n      else resolve({ stdout, stderr });\n    });\n  });", "decoding": "function decode(code: string): Calendar {\n  if (!/^[0-9A-Za-z]{3}$/.test(code)) fail('A compact date must contain exactly three characters from 0-9, A-Z, a-z');\n  const year = FIRST_YEAR + ALPHABET.indexOf(code.charAt(0));\n  const month = ALPHABET.indexOf(code.charAt(1));\n  const day = ALPHABET.indexOf(code.charAt(2));\n  if (month \u003c 1 || month > 12) fail('Invalid month character; use 1-9 or A-C');\n  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);\n  const length = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1];\n  if (length === undefined || day \u003c 1 || day > length) fail(`Invalid day character or calendar date for ${year}-${pad(month)}; month length is ${length ?? 'unknown'}`);\n  return { year, month, day };\n}", "formatting": "  const midnight = `${text} 00:00:00`;\n  const verified = await runDate(midnight, ['+%Y-%m-%d %H:%M:%S'], options.zone);\n  if (verified.trim() !== midnight) fail(`Midnight does not exist in the selected zone for ${text}; try --utc`);\n  const output = await runDate(midnight, options.formatArgs, options.zone);\n  await record('Formatting validated', { formatArguments: options.formatArgs, output, reason: 'No time was encoded; output formatting uses the validated midnight.' });\n  await writeAndFlush(process.stdout, output);", "failure": "try {\n  await main();\n} catch (error: unknown) {\n  process.exitCode = 1;\n  try { await record('Failed', errorDetails(error)); }\n  catch (loggingError: unknown) { await writeAndFlush(process.stderr, `${SCRIPT_NAME}: could not record failure: ${errorMessage(loggingError)}\\n`); }\n  await writeAndFlush(process.stderr, `${SCRIPT_NAME}: ${errorMessage(error)}\\n`);\n} finally {\n  if (debugFile) {\n    try { await debugFile.close(); }\n    catch (error: unknown) { process.exitCode = 1; await writeAndFlush(process.stderr, `${SCRIPT_NAME}: could not close debug log: ${errorMessage(error)}\\n`); }\n  }\n}", "bootstrap": "#!/bin/sh\n':' //; STANDALONE_SCRIPT_NAME=\"$0\" exec node --input-type=module-typescript - \"$@\" \u003c \"$0\"\n':' // Runtime requirements: Node.js 22.18+ and erasable TypeScript syntax only; GNU-compatible date on PATH.\n':' // Development validation: TypeScript 5.8+ with strict --erasableSyntaxOnly checking; use scripts/typecheck-cli.", "verification": "CHECKER=\"$HOME/.codex/skills/build-standalone-ts-cli/scripts/typecheck-cli\"\ntimeout 60s \"$CHECKER\" ./cdate\ntimeout 60s \"$CHECKER\" ./ddate\ntimeout 60s node --test tests/date-tools.test.mjs"};
+    const help = {"cdate": "cdate encodes a calendar date as three case-sensitive characters.\nYears 2000-2061 use 0-9, A-Z, then a-z; months and days use the same alphabet.\nWith no input, encode today. Local time is the default, as with date.\n\nUsage: ./cdate [OPTIONS] [DATE OR TIMESTAMP ...]\n\nOptions:\n  -h, --help                 Show this help and exit.\n  -V, --version              Show the command version and exit.\n  -d, --debug                Write a private execution log in the current directory.\n      --date STRING          Supply input instead of positional words.\n  -i, --input-format FORMAT  auto (default), ymd, mdy, dmy, unix, unix-ms,\n                            date (system parser), or javascript (Date.parse).\n  -r, --reference FILE       Encode the file's last modification date.\n  -u, --utc, --universal     Select UTC for unzoned inputs and the output date.\n  -l, --local                Explicitly use the system/TZ local time zone.\n  -z, --timezone ZONE        Use a named IANA time zone, e.g. America/New_York.\n\nExamples:\n  ./cdate 2010-01-11\n  ./cdate 20100111\n  ./cdate January 11, 2010\n  ./cdate -u 2010-01-11T13:41:54Z\n  ./cdate --input-format dmy 11/01/2010\n  ./cdate --input-format unix-ms 1263217314000\n\nAuto detects ISO dates/times, YYYYMMDD, English dates, standard date and\nJavaScript date strings, @Unix seconds, 10-digit seconds and 13-digit\nmilliseconds. Numeric dates with the year last use day/month when the first\nfield exceeds 12; otherwise month/day. Use mdy or dmy to disambiguate.\nUnzoned calendar input uses the selected zone. An explicit offset determines\nthe instant, which is then converted to the selected zone. javascript mode\nuses Date.parse's UTC rule for ISO date-only input after calendar validation.\nUse -- before a positional input beginning with a hyphen.\n\nInvalid calendars, malformed input, duplicate/conflicting options, and output\ndates outside 2000-01-01 through 2061-12-31 fail without a compact result.\nNo system clock changes or network requests are made. Debug logs contain input\nand paths, have mode 0600, and use _YYYYMMDD_HHMMSS_cdate.log without overwrite.\nHelp and version do not read reference files or create logs.\n", "ddate": "ddate decodes a case-sensitive three-character compact calendar date.\nThe supported range is 2000-01-01 through 2061-12-31. The result is midnight\nin local/system TZ time by default. Formatting is performed by date.\n\nUsage: ./ddate [OPTIONS] CODE [+FORMAT]\n       ./ddate [OPTIONS] --date CODE [+FORMAT]\n\nOptions:\n  -h, --help                 Show this help and exit.\n  -V, --version              Show the command version and exit.\n  -d, --debug                Write a private execution log in the current directory.\n      --date CODE            Supply the compact date instead of a positional CODE.\n  -u, --utc, --universal     Interpret and format midnight in UTC.\n  -l, --local                Explicitly use the system/TZ local time zone.\n  -z, --timezone ZONE        Use a named IANA time zone, e.g. America/New_York.\n  -I, --iso-8601[=FMT]       ISO output: date (default), hours, minutes, seconds, ns.\n                            Also accepts attached short forms such as -Iseconds.\n  -R, --rfc-email            RFC 5322 email output; --rfc-2822 is an alias.\n      --rfc-3339 FMT        RFC 3339 output: date, seconds, or ns.\n\nWith no formatting option, print the same default representation as date.\nUse one +FORMAT or one ISO/RFC option. +FORMAT supports the installed date\ncommand's percent directives, padding flags, widths and locale modifiers.\nAttach an optional ISO precision with = or directly to -I.\n\nExamples:\n  ./ddate A1B +%F\n  ./ddate -u A1B '+%A, %B %d, %Y'\n  ./ddate A1B --iso-8601=seconds\n  ./ddate -u A1B --rfc-3339 seconds\n\nMonth characters must be 1-9 or A-C; day characters must be 1-9 or A-V.\nInvalid lengths, characters, calendars, duplicate/conflicting options and\nnonexistent local midnights fail without a decoded result. The code contains\nno time or original time zone. Selecting UTC reinterprets its calendar day.\nNo system clock changes or network requests are made. Debug logs contain input\nand paths, have mode 0600, and use _YYYYMMDD_HHMMSS_ddate.log without overwrite.\nHelp and version do not run date or create logs.\n"};
+    function required(selector) {
+      const element = document.querySelector(selector);
+      if (!element) throw new Error(`Missing walkthrough element: ${selector}`);
+      return element;
+    }
+    function initialize() {
+      const alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+      const themeSelect = required("#theme-select");
+      const status = required("#status");
+      const sections = Array.from(document.querySelectorAll("[data-step]"));
+      const nav = required("#section-nav");
+      const previous = required("#previous");
+      const next = required("#next");
+      const progress = required("#progress");
+      const calendarInput = required("#calendar-input");
+      const compactInput = required("#compact-input");
+      const encodeResult = required("#encode-result");
+      const decodeResult = required("#decode-result");
+      const characters = [required("#year-character"), required("#month-character"), required("#day-character")];
+      const terminalMode = required("#terminal-mode");
+      const terminalOutput = required("#terminal-output");
+      const debugPreview = required("#debug-preview");
+      const debugOutput = required("#debug-output");
+      const quizAnswer = required("#quiz-answer");
+      const quizResult = required("#quiz-result");
+      let current = 0;
+      const navButtons = sections.map((section, index) => {
+        const button = document.createElement("button");
+        button.textContent = `${index + 1}. ${section.dataset.step}`;
+        button.addEventListener("click", () => show(index));
+        nav.append(button);
+        return button;
+      });
+      function show(index) {
+        current = Math.max(0, Math.min(sections.length - 1, index));
+        sections.forEach((section, i) => { section.hidden = i !== current; });
+        navButtons.forEach((button, i) => {
+          if (i === current) button.setAttribute("aria-current", "step");
+          else button.removeAttribute("aria-current");
+        });
+        const active = navButtons[current];
+        if (nav.scrollWidth > nav.clientWidth) {
+          const outer = nav.getBoundingClientRect();
+          const inner = active.getBoundingClientRect();
+          if (inner.left < outer.left) nav.scrollLeft += inner.left - outer.left - 4;
+          else if (inner.right > outer.right) nav.scrollLeft += inner.right - outer.right + 4;
+        }
+        progress.textContent = `Step ${current + 1} of ${sections.length}`;
+        previous.disabled = current === 0;
+        next.disabled = current === sections.length - 1;
+      }
+      previous.addEventListener("click", () => show(current - 1));
+      next.addEventListener("click", () => show(current + 1));
+      document.querySelectorAll("[data-jump]").forEach((button) => {
+        button.addEventListener("click", () => show(Number(button.dataset.jump)));
+      });
+      themeSelect.addEventListener("change", () => {
+        if (themeSelect.value === "system") document.documentElement.removeAttribute("data-theme");
+        else document.documentElement.dataset.theme = themeSelect.value;
+      });
+      document.querySelectorAll("[data-snippet]").forEach((element) => {
+        const text = snippets[element.dataset.snippet];
+        if (typeof text !== "string") throw new Error("Missing code excerpt");
+        element.textContent = text;
+      });
+      document.querySelectorAll("[data-copy]").forEach((button) => {
+        button.addEventListener("click", async () => {
+          try {
+            await navigator.clipboard.writeText(snippets[button.dataset.copy]);
+            status.textContent = "Copied code to clipboard.";
+          } catch (error) {
+            status.textContent = `Copy failed. Select and copy the code directly. ${error instanceof Error ? error.message : String(error)}`;
+          }
+        });
+      });
+      function validCalendar(year, month, day) {
+        const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+        const length = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1];
+        return Number.isInteger(year) && year >= 2000 && year <= 2061 && month >= 1 && month <= 12 && day >= 1 && day <= length;
+      }
+      function updateEncoding() {
+        const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(calendarInput.value);
+        const fields = match ? match.slice(1).map(Number) : [];
+        if (!match || !validCalendar(...fields)) {
+          characters.forEach((element) => { element.textContent = "?"; });
+          encodeResult.textContent = "Choose an existing date from 2000-01-01 through 2061-12-31.";
+          return;
+        }
+        const [year, month, day] = fields;
+        const code = alphabet[year - 2000] + alphabet[month] + alphabet[day];
+        characters.forEach((element, index) => { element.textContent = code[index]; });
+        encodeResult.textContent = `${calendarInput.value} encodes as ${code}.`;
+      }
+      function updateDecoding() {
+        const code = compactInput.value;
+        if (!/^[0-9A-Za-z]{3}$/.test(code)) { decodeResult.textContent = "Enter exactly three alphabet characters."; return; }
+        const year = 2000 + alphabet.indexOf(code[0]);
+        const month = alphabet.indexOf(code[1]);
+        const day = alphabet.indexOf(code[2]);
+        if (!validCalendar(year, month, day)) { decodeResult.textContent = "This code describes an invalid month or calendar day."; return; }
+        decodeResult.textContent = `${code} decodes as ${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}.`;
+      }
+      calendarInput.addEventListener("input", updateEncoding);
+      compactInput.addEventListener("input", updateDecoding);
+      required("#quiz-reveal").addEventListener("click", () => {
+        quizResult.textContent = quizAnswer.value === "error" ? "Correct. z is 2061; the next year cannot be encoded."
+          : quizAnswer.value === "" ? "Choose an answer first." : "The command fails. Wrapping would change the year and lose the original date.";
+      });
+      const terminalExamples = {
+        encode: "$ ./cdate -u 2010-01-11T13:41:54Z\nA1B",
+        decode: "$ ./ddate -u A1B '+%F %T %z'\n2010-01-11 00:00:00 +0000",
+        debug: "$ ./cdate --debug 2010-01-11\n[stderr] cdate: debug log: /example/_20261010_134154_cdate.log\n[stdout] A1B",
+        failure: "$ ./cdate 2010-02-30\n[stderr] cdate: Invalid calendar date: 2010-02-30\nExit status: 1\n\n$ ./ddate A2T\n[stderr] ddate: Invalid day character or calendar date for 2010-02; month length is 28\nExit status: 1",
+        "help-cdate": "$ ./cdate --help\n" + help.cdate,
+        "help-ddate": "$ ./ddate --help\n" + help.ddate,
+      };
+      debugOutput.textContent = `2026-10-10T13:41:54.000Z Execution plan
+{
+  "steps": [
+    "Resolve input and validate calendar fields",
+    "Select the date in the requested zone",
+    "Check the 2000-2061 range",
+    "Encode and flush one result"
+  ]
+}
+2026-10-10T13:41:54.001Z Input validation and interpretation
+{
+  "value": "2010-01-11",
+  "decision": "Validate numeric calendar fields in ymd order before parsing the time or offset."
+}
+2026-10-10T13:41:54.002Z Parse and select the calendar day
+{
+  "command": "date",
+  "arguments": ["--date=2010-01-11", "+%Y-%m-%d %H:%M:%S"],
+  "zone": "inherited system/TZ",
+  "reason": "Use the system date parser and its time-zone rules before checking the compact range."
+}
+2026-10-10T13:41:54.003Z System parser result
+{
+  "stdout": "2010-01-11 00:00:00\\n",
+  "stderr": ""
+}
+2026-10-10T13:41:54.004Z Completed
+{
+  "result": "A1B",
+  "next": "Close the private log and return success."
+}`;
+      function showTerminal() {
+        terminalOutput.textContent = terminalExamples[terminalMode.value];
+        debugPreview.hidden = terminalMode.value !== "debug";
+      }
+      terminalMode.addEventListener("change", showTerminal);
+      show(0);
+      updateEncoding();
+      updateDecoding();
+      showTerminal();
+    }
+    try { initialize(); }
+    catch (error) {
+      const status = document.getElementById("status");
+      const message = `Walkthrough initialization failed: ${error instanceof Error ? error.message : String(error)}`;
+      if (status) status.textContent = message;
+      else document.body.append(document.createTextNode(message));
+      throw error;
+    }
+  </script>
+</body>
+</html>

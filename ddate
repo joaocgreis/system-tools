@@ -1,0 +1,214 @@
+#!/bin/sh
+':' //; STANDALONE_SCRIPT_NAME="$0" exec node --input-type=module-typescript - "$@" < "$0"
+':' // Runtime requirements: Node.js 22.18+ and erasable TypeScript syntax only; GNU-compatible date on PATH.
+':' // Development validation: TypeScript 5.8+ with strict --erasableSyntaxOnly checking; use scripts/typecheck-cli.
+
+import { execFile } from 'node:child_process';
+import { open } from 'node:fs/promises';
+import type { FileHandle } from 'node:fs/promises';
+import { basename, join } from 'node:path';
+import { parseArgs } from 'node:util';
+
+const ALPHABET = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
+const FIRST_YEAR = 2000;
+const DATE_TIMEOUT_MS = 5000;
+const SCRIPT_NAME = basename(process.env['STANDALONE_SCRIPT_NAME'] ?? 'ddate');
+const ISO_PRECISIONS = ['date', 'hours', 'minutes', 'seconds', 'ns'];
+const RFC_PRECISIONS = ['date', 'seconds', 'ns'];
+const HELP = `ddate decodes a case-sensitive three-character compact calendar date.
+The supported range is 2000-01-01 through 2061-12-31. The result is midnight
+in local/system TZ time by default. Formatting is performed by date.
+
+Usage: ./ddate [OPTIONS] CODE [+FORMAT]
+       ./ddate [OPTIONS] --date CODE [+FORMAT]
+
+Options:
+  -h, --help                 Show this help and exit.
+  -V, --version              Show the command version and exit.
+  -d, --debug                Write a private execution log in the current directory.
+      --date CODE            Supply the compact date instead of a positional CODE.
+  -u, --utc, --universal     Interpret and format midnight in UTC.
+  -l, --local                Explicitly use the system/TZ local time zone.
+  -z, --timezone ZONE        Use a named IANA time zone, e.g. America/New_York.
+  -I, --iso-8601[=FMT]       ISO output: date (default), hours, minutes, seconds, ns.
+                            Also accepts attached short forms such as -Iseconds.
+  -R, --rfc-email            RFC 5322 email output; --rfc-2822 is an alias.
+      --rfc-3339 FMT        RFC 3339 output: date, seconds, or ns.
+
+With no formatting option, print the same default representation as date.
+Use one +FORMAT or one ISO/RFC option. +FORMAT supports the installed date
+command's percent directives, padding flags, widths and locale modifiers.
+Attach an optional ISO precision with = or directly to -I.
+
+Examples:
+  ./ddate A1B +%F
+  ./ddate -u A1B '+%A, %B %d, %Y'
+  ./ddate A1B --iso-8601=seconds
+  ./ddate -u A1B --rfc-3339 seconds
+
+Month characters must be 1-9 or A-C; day characters must be 1-9 or A-V.
+Invalid lengths, characters, calendars, duplicate/conflicting options and
+nonexistent local midnights fail without a decoded result. The code contains
+no time or original time zone. Selecting UTC reinterprets its calendar day.
+No system clock changes or network requests are made. Debug logs contain input
+and paths, have mode 0600, and use _YYYYMMDD_HHMMSS_ddate.log without overwrite.
+Help and version do not run date or create logs.
+`;
+
+interface Calendar { year: number; month: number; day: number }
+interface Options {
+  help: boolean;
+  version: boolean;
+  debug: boolean;
+  code: string;
+  zone: string | undefined;
+  formatArgs: string[];
+}
+let debugFile: FileHandle | undefined;
+
+function fail(message: string): never { throw new Error(message); }
+function errorMessage(error: unknown): string { return error instanceof Error ? error.message : String(error); }
+function errorDetails(error: unknown): unknown {
+  return error instanceof Error
+    ? { name: error.name, message: error.message, stack: error.stack, cause: error.cause === undefined ? null : errorDetails(error.cause) }
+    : { rejection: String(error) };
+}
+async function writeAndFlush(stream: typeof process.stdout | typeof process.stderr, text: string): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    stream.write(text, (error) => { if (error) reject(error); else resolve(); });
+  });
+}
+async function record(step: string, details: unknown): Promise<void> {
+  if (debugFile) await debugFile.writeFile(`${new Date().toISOString()} ${step}\n${JSON.stringify(details, null, 2)}\n`);
+}
+function pad(value: number): string { return String(value).padStart(2, '0'); }
+async function startDebug(): Promise<void> {
+  const now = new Date();
+  const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+  const safeName = SCRIPT_NAME.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const path = join(process.cwd(), `_${stamp}_${safeName}.log`);
+  debugFile = await open(path, 'wx', 0o600);
+  await record('Environment and invocation', {
+    arguments: process.argv.slice(2), cwd: process.cwd(), runtime: process.version, executable: SCRIPT_NAME,
+    log: path, TZ: process.env['TZ'] ?? null, LANG: process.env['LANG'] ?? null,
+    sensitivity: 'Contains supplied codes and formatting strings. No credentials or network traffic are collected.',
+  });
+  await writeAndFlush(process.stderr, `${SCRIPT_NAME}: debug log: ${path}\n`);
+}
+
+function decode(code: string): Calendar {
+  if (!/^[0-9A-Za-z]{3}$/.test(code)) fail('A compact date must contain exactly three characters from 0-9, A-Z, a-z');
+  const year = FIRST_YEAR + ALPHABET.indexOf(code.charAt(0));
+  const month = ALPHABET.indexOf(code.charAt(1));
+  const day = ALPHABET.indexOf(code.charAt(2));
+  if (month < 1 || month > 12) fail('Invalid month character; use 1-9 or A-C');
+  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const length = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1];
+  if (length === undefined || day < 1 || day > length) fail(`Invalid day character or calendar date for ${year}-${pad(month)}; month length is ${length ?? 'unknown'}`);
+  return { year, month, day };
+}
+function calendarText(calendar: Calendar): string {
+  return `${calendar.year}-${pad(calendar.month)}-${pad(calendar.day)}`;
+}
+
+function readOptions(): Options {
+  const args = process.argv.slice(2);
+  const terminator = args.indexOf('--');
+  // parseArgs has no optional string values. Expand only GNU's attached ISO
+  // spellings to a required value; parseArgs still parses every argument.
+  const normalized = args.map((argument, index) => {
+    if (terminator !== -1 && index >= terminator) return argument;
+    if (argument === '-I' || argument === '--iso-8601') return '--iso-8601=date';
+    if (/^-I.+/.test(argument)) return `--iso-8601=${argument.slice(2)}`;
+    return argument;
+  });
+  const { values, positionals, tokens } = parseArgs({
+    args: normalized, strict: true, allowPositionals: true, tokens: true,
+    options: {
+      help: { type: 'boolean', short: 'h' }, version: { type: 'boolean', short: 'V' },
+      debug: { type: 'boolean', short: 'd' }, date: { type: 'string' },
+      utc: { type: 'boolean', short: 'u' }, universal: { type: 'boolean' },
+      local: { type: 'boolean', short: 'l' }, timezone: { type: 'string', short: 'z' },
+      'iso-8601': { type: 'string', short: 'I' }, 'rfc-email': { type: 'boolean', short: 'R' },
+      'rfc-2822': { type: 'boolean' }, 'rfc-3339': { type: 'string' },
+    },
+  });
+  const seen = new Set<string>();
+  for (const token of tokens) {
+    if (token.kind !== 'option') continue;
+    const name = token.name === 'universal' ? 'utc' : token.name === 'rfc-2822' ? 'rfc-email' : token.name;
+    if (seen.has(name)) fail(`Option --${name} was specified more than once`);
+    seen.add(name);
+  }
+  if (values.help || values.version) return {
+    help: values.help ?? false, version: values.version ?? false, debug: false, code: '', zone: undefined, formatArgs: [],
+  };
+  const utc = values.utc || values.universal;
+  if (Number(Boolean(utc)) + Number(Boolean(values.local)) + Number(values.timezone !== undefined) > 1) fail('Choose only one of --utc, --local, or --timezone');
+  if (values.timezone !== undefined) {
+    try { new Intl.DateTimeFormat('en', { timeZone: values.timezone }); }
+    catch (error: unknown) { throw new Error(`Invalid IANA time zone: ${values.timezone}`, { cause: error }); }
+  }
+  const formats = positionals.filter((argument) => argument.startsWith('+'));
+  const codes = positionals.filter((argument) => !argument.startsWith('+'));
+  if (formats.length > 1) fail('Supply at most one +FORMAT');
+  if (codes.length > (values.date === undefined ? 1 : 0)) fail('Supply exactly one compact date, positionally or with --date');
+  const code = values.date ?? codes[0];
+  if (code === undefined) fail('A compact date is required; use --help for usage');
+  const iso = values['iso-8601'];
+  const rfc = values['rfc-3339'];
+  const email = values['rfc-email'] || values['rfc-2822'];
+  if (Number(iso !== undefined) + Number(rfc !== undefined) + Number(Boolean(email)) + formats.length > 1) fail('Choose only one +FORMAT, --iso-8601, --rfc-email, or --rfc-3339');
+  if (iso !== undefined && !ISO_PRECISIONS.includes(iso)) fail(`Invalid ISO precision; choose ${ISO_PRECISIONS.join(', ')}`);
+  if (rfc !== undefined && !RFC_PRECISIONS.includes(rfc)) fail(`Invalid RFC 3339 precision; choose ${RFC_PRECISIONS.join(', ')}`);
+  const formatArgs = iso !== undefined ? [`--iso-8601=${iso}`] : rfc !== undefined ? [`--rfc-3339=${rfc}`]
+    : email ? ['--rfc-email'] : formats;
+  return { help: false, version: false, debug: values.debug ?? false, code, zone: utc ? 'UTC0' : values.timezone, formatArgs };
+}
+
+async function runDate(value: string, formatArgs: string[], zone: string | undefined): Promise<string> {
+  const args = [`--date=${value}`, ...formatArgs];
+  await record('Run date', { command: 'date', arguments: args, zone: zone ?? 'inherited system/TZ', reason: 'Use installed date time-zone and formatting behavior without a shell.' });
+  const output = await new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
+    execFile('date', args, { encoding: 'utf8', timeout: DATE_TIMEOUT_MS, maxBuffer: 1024 * 1024,
+      env: zone === undefined ? process.env : { ...process.env, TZ: zone } }, (error, stdout, stderr) => {
+      if (error) reject(new Error(`date could not interpret or format midnight: ${stderr.trim() || error.message}`, { cause: error }));
+      else resolve({ stdout, stderr });
+    });
+  });
+  await record('Date result', output);
+  if (output.stderr) await writeAndFlush(process.stderr, output.stderr);
+  return output.stdout;
+}
+
+async function main(): Promise<void> {
+  const options = readOptions();
+  if (options.help) { await writeAndFlush(process.stdout, HELP); return; }
+  if (options.version) { await writeAndFlush(process.stdout, 'ddate 1.0.0\n'); return; }
+  if (options.debug) await startDebug();
+  await record('Execution plan', { steps: ['Validate and decode all three characters', 'Verify midnight exists in the selected zone', 'Format with date', 'Flush one result'], options });
+  const calendar = decode(options.code);
+  const text = calendarText(calendar);
+  await record('Decoded and validated', { code: options.code, calendar, next: 'Verify that date does not normalize a missing local midnight.' });
+  const midnight = `${text} 00:00:00`;
+  const verified = await runDate(midnight, ['+%Y-%m-%d %H:%M:%S'], options.zone);
+  if (verified.trim() !== midnight) fail(`Midnight does not exist in the selected zone for ${text}; try --utc`);
+  const output = await runDate(midnight, options.formatArgs, options.zone);
+  await record('Formatting validated', { formatArguments: options.formatArgs, output, reason: 'No time was encoded; output formatting uses the validated midnight.' });
+  await writeAndFlush(process.stdout, output);
+  await record('Completed', { calendar, next: 'Close the private log and return success.' });
+}
+
+try {
+  await main();
+} catch (error: unknown) {
+  process.exitCode = 1;
+  try { await record('Failed', errorDetails(error)); }
+  catch (loggingError: unknown) { await writeAndFlush(process.stderr, `${SCRIPT_NAME}: could not record failure: ${errorMessage(loggingError)}\n`); }
+  await writeAndFlush(process.stderr, `${SCRIPT_NAME}: ${errorMessage(error)}\n`);
+} finally {
+  if (debugFile) {
+    try { await debugFile.close(); }
+    catch (error: unknown) { process.exitCode = 1; await writeAndFlush(process.stderr, `${SCRIPT_NAME}: could not close debug log: ${errorMessage(error)}\n`); }
+  }
+}
