@@ -1,0 +1,15 @@
+Use case: infographic-diagram.
+Asset type: introductory infographic for the README of cdate and ddate, tools that encode a Gregorian calendar date into exactly three case-sensitive characters.
+
+Create a polished, professional educational infographic on a clean light background. Landscape composition, approximately 3:2, generous whitespace, crisp sans-serif labels and monospaced digits/characters. Flat vector-like visual design, strong contrast, restrained teal, blue, and amber accents. Use teal consistently for the year, blue for the month, amber for the day. No table, no spreadsheet grid, no stock imagery, no decorative icons, no watermark.
+
+Reading flow:
+1. At the top, a clear title, exactly "Compact dates", followed by "One character for the year, month, and day."
+2. Make the main worked example the largest element. Show "2010-01-11" with the fields separated visually into year "2010", month "01", day "11". Place the three large compact characters "A", "1", "B" directly below their respective source fields, joined visually as "A1B". Use simple downward connectors so the correspondence is unmistakable: year 2010 maps to A, January (month 1) maps to 1, day 11 maps to B. Label the three fields "YEAR", "MONTH", "DAY". Under the compact code show the short label "January 11, 2010". The compact string must have no hyphens or spaces when shown as "A1B". Make the uppercase B distinct from the digit 8.
+3. Below the main example, explain the complete mappings using three distinct visual devices, not a table. Each device uses the color of its field and has enough space for legible labels:
+   YEAR: a timeline moving through three sequential stages. Connect the year range "2000–2009" to the character range "0–9", then "2010–2035" to "A–Z", then "2036–2061" to "a–z". These are character ranges in order; lowercase and uppercase must remain distinct. Show the short rule "year − 2000" if space permits.
+   MONTH: a month sequence with a compact run "Jan–Sep" connected to "1–9", then three separately labeled month markers with individual connecting arrows: "Oct" to "A", "Nov" to "B", "Dec" to "C". Ensure it is visually obvious that October is 10 and becomes A, November is 11 and becomes B, December is 12 and becomes C.
+   DAY: a day-number line connecting "1–9" to "1–9", and "10–31" to "A–V". Include three small direct example connections "10 → A", "11 → B", "31 → V". The 11-to-B example should visually echo the hero.
+4. At the bottom, concise readable notes: "2000-01-01 through 2061-12-31", "Case-sensitive", and "Calendar date only • no time or timezone".
+
+All mappings and literal text must be mathematically correct and rendered exactly. Each position represents a separate field, not a whole-number base-62 conversion. Lowercase is used only for the year, never for valid month/day characters. Treat visual connectors, spacing, and type hierarchy as the explanation. Avoid dense prose and avoid making the three mapping devices look like table columns with aligned rows. Keep all text safely inside the canvas.

@@ -1,6 +1,10 @@
 # cdate and ddate
 
-A compact date stores the year, month, and day in three case-sensitive characters, one for each field. For example, `A1B` means January 11, 2010: `A` is the year 2010, `1` is January, and `B` is day 11. Digits, uppercase letters, and lowercase letters let the format cover dates from 2000-01-01 through 2061-12-31.
+A compact date stores the year, month, and day in three case-sensitive characters, one for each field.
+
+![Compact date infographic showing 2010-01-11 becoming A1B, with arrows explaining the year, month, and day character mappings.](assets/compact-date-format.png)
+
+For example, `A1B` means January 11, 2010: `A` is the year 2010, `1` is January, and `B` is day 11. Digits, uppercase letters, and lowercase letters let the format cover dates from 2000-01-01 through 2061-12-31.
 
 `cdate` converts a date to this compact format. `ddate` decodes it and formats the result with the installed `date` command.
 
@@ -54,11 +58,9 @@ All three positions use this alphabet, indexed from zero:
 
 The first character is the index `year - 2000`. The second is the month number, from 1 through 12. The third is the day number, from 1 through 31. This is a separate field encoding, rather than a single base-62 integer.
 
-| Field | Character mapping |
-| --- | --- |
-| Year | `0`–`9` = 2000–2009; `A`–`Z` = 2010–2035; `a`–`z` = 2036–2061 |
-| Month | `1`–`9` = January–September; `A`, `B`, `C` = October, November, December |
-| Day | `1`–`9` = days 1–9; `A`–`V` = days 10–31 |
+- Years 2000–2009 use `0`–`9`, years 2010–2035 use `A`–`Z`, and years 2036–2061 use `a`–`z`.
+- Months January–September use `1`–`9`; October, November, and December use `A`, `B`, and `C`.
+- Days 1–9 use `1`–`9`; days 10–31 use `A`–`V`.
 
 For `A1B`, `A` means 2010, `1` means January, and `B` means day 11. The earliest code is `011`; the latest is `zCV`. There are 22,646 valid codes. Case matters: `A11` is 2010-01-01, while `a11` is 2036-01-01.
 
