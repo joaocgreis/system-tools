@@ -145,23 +145,103 @@ test('range boundaries and year alphabet transitions are exact', () => {
   success('cdate', ['2062-01-01T00:30:00+01:00', '-u'], 'zCV\n');
 });
 
-test('time zones select the day; calendar-only input stays in the selected zone', () => {
+test('output zones independently select the calendar day; both defaults are UTC', () => {
   const west = { env: { ...environment, TZ: 'America/Los_Angeles' } };
-  success('cdate', ['2010-01-11T00:30:00Z'], 'A1A\n', west);
+  success('cdate', ['2010-01-11T00:30:00Z'], 'A1B\n', west);
+  success('cdate', ['2010-01-11T00:30:00Z', '-l'], 'A1A\n', west);
+  success('cdate', ['2010-01-11T00:30:00Z', '--local'], 'A1A\n', west);
   success('cdate', ['2010-01-11T00:30:00Z', '-u'], 'A1B\n', west);
   success('cdate', ['2010-01-11'], 'A1B\n', west);
-  success('cdate', ['2010-01-11', '-l'], 'A1B\n', west);
-  success('cdate', ['2010-01-11', '-i', 'javascript'], 'A1A\n', west);
+  success('cdate', ['2010-01-11', '-l'], 'A1A\n', west);
+  success('cdate', ['2010-01-11', '-i', 'javascript'], 'A1B\n', west);
+  success('cdate', ['2010-01-11', '-i', 'javascript', '--local'], 'A1A\n', west);
   success('cdate', ['2010-01-11', '-i', 'javascript', '-u'], 'A1B\n', west);
   success('cdate', ['2010-01-11T00:30:00Z', '-z', 'America/Los_Angeles'], 'A1A\n');
   success('cdate', ['2010-01-11T23:30:00Z', '-z', 'Asia/Kolkata'], 'A1C\n');
   success('cdate', ['Mon Jan 11 2010 00:30:00 GMT+0500 (Pakistan Standard Time)'], 'A1A\n');
+  success('cdate', [], `${expectedCode(systemDate('now', ['+%F']))}\n`, west);
   success('cdate', ['--local'], `${expectedCode(systemDate('now', ['+%F'], west.env))}\n`, west);
-  success('ddate', ['A1B', '+%F %T %z'], '2010-01-11 00:00:00 -0800\n', west);
+  success('cdate', ['2010-03-14 02:30:00'], 'A3E\n', west);
+  const timestamp = String(Date.parse('2010-01-11T00:30:00Z') / 1000);
+  success('cdate', [timestamp], 'A1B\n', west);
+  success('cdate', [timestamp, '--local'], 'A1A\n', west);
+  success('ddate', ['A1B', '+%F %T %z'], '2010-01-11 00:00:00 +0000\n', west);
+  success('ddate', ['A1B', '-l', '+%F %T %z'], '2010-01-10 16:00:00 -0800\n', west);
+  success('ddate', ['A1B', '--local', '+%F %T %z'], '2010-01-10 16:00:00 -0800\n', west);
   success('ddate', ['A1B', '-u', '+%F %T %z'], '2010-01-11 00:00:00 +0000\n', west);
-  failure('cdate', ['2010-03-14 02:30:00'], /could not parse|does not exist/, west);
-  failure('ddate', ['BCU', '-z', 'Pacific/Apia', '+%F'], /could not interpret|does not exist/);
+  success('ddate', ['BCU', '-z', 'Pacific/Apia', '+%F %T %z'], '2011-12-29 14:00:00 -1000\n');
   success('ddate', ['BCU', '-u', '+%F'], '2011-12-30\n');
+});
+
+test('input zones interpret unzoned input without changing the output zone', () => {
+  const west = { env: { ...environment, TZ: 'America/Los_Angeles' } };
+  success('cdate', ['2010-01-11', '--input-local'], 'A1B\n', west);
+  success('cdate', ['2010-01-11', '--input-local', '--local'], 'A1B\n', west);
+  success('cdate', ['2010-01-11 23:30:00', '--input-local'], 'A1C\n', west);
+  success('cdate', ['2010-01-11 23:30:00', '--input-local', '--utc'], 'A1C\n', west);
+  success('cdate', ['2010-01-11 23:30:00', '--input-local', '--local'], 'A1B\n', west);
+  success('cdate', ['2010-01-11 00:30:00', '--input-utc', '--local'], 'A1A\n', west);
+  success('cdate', ['2010-01-11 00:30:00', '--input-timezone', 'Asia/Tokyo'], 'A1A\n');
+  success('cdate', ['2010-01-11 00:30:00', '--input-timezone', 'Asia/Tokyo', '-z', 'Asia/Tokyo'], 'A1B\n');
+  success('cdate', ['2010-01-11 23:30:00', '--input-timezone', 'America/Los_Angeles', '-z', 'Asia/Tokyo'], 'A1C\n');
+  for (const options of [['--input-local'], ['--input-timezone', 'Asia/Tokyo']]) {
+    success('cdate', ['2010-01-11T00:30:00Z', ...options], 'A1B\n', west);
+    success('cdate', ['2010-01-11T00:30:00Z', ...options, '--local'], 'A1A\n', west);
+    success('cdate', ['1263169800', ...options], 'A1B\n', west);
+  }
+  failure('cdate', ['2010-03-14 02:30:00', '--input-local'], /could not parse|does not exist/, west);
+  failure('ddate', ['BCU', '--input-timezone', 'Pacific/Apia', '+%F'], /could not interpret|does not exist/);
+  success('ddate', ['A1B', '--input-local', '+%F %T %z'], '2010-01-11 08:00:00 +0000\n', west);
+  success('ddate', ['A1B', '--input-local', '--local', '+%F %T %z'], '2010-01-11 00:00:00 -0800\n', west);
+  success('ddate', ['A1B', '--input-utc', '--local', '+%F %T %z'], '2010-01-10 16:00:00 -0800\n', west);
+  success('ddate', ['A1B', '--input-timezone', 'Asia/Tokyo', '+%F %T %z'], '2010-01-10 15:00:00 +0000\n');
+  success('ddate', ['A1B', '--input-timezone', 'Asia/Tokyo', '-z', 'America/Los_Angeles', '+%F %T %z'], '2010-01-10 07:00:00 -0800\n');
+  success('ddate', ['A1B', '+%s'], '1263168000\n', west);
+  success('ddate', ['A1B', '--local', '+%s'], '1263168000\n', west);
+  success('ddate', ['A1B', '--input-local', '+%s'], '1263196800\n', west);
+});
+
+test('JavaScript uses the input zone for unzoned date-times and restores the local output zone', () => {
+  const west = { env: { ...environment, TZ: 'America/Los_Angeles' } };
+  success('cdate', ['2010-01-11T00:30:00', '-i', 'javascript', '--local'], 'A1A\n', west);
+  success('cdate', ['2010-01-11T23:30:00', '-i', 'javascript', '--input-local'], 'A1C\n', west);
+  success('cdate', ['2010-01-11T23:30:00', '-i', 'javascript', '--input-local', '--local'], 'A1B\n', west);
+  success('cdate', ['2010-01-11T00:30:00', '-i', 'javascript', '--input-timezone', 'Asia/Tokyo'], 'A1A\n', west);
+  success('cdate', ['2010-01-11', '-i', 'javascript', '--input-local', '--local'], 'A1A\n', west);
+  success('cdate', ['2011-12-30', '-i', 'javascript', '--input-timezone', 'Pacific/Apia'], 'BCU\n');
+  success('cdate', ['2011-12-30T00:00:00Z', '--input-timezone', 'Pacific/Apia'], 'BCU\n');
+  for (const input of ['Fri, 30 Dec 2011 00:00:00 +0000', 'Fri Dec 30 00:00:00 UTC 2011', '2011-12-30 00:00:00 UTC']) {
+    success('cdate', [input, '--input-timezone', 'Pacific/Apia'], 'BCU\n');
+  }
+  failure('cdate', ['2010-03-14T02:30:00', '-i', 'javascript', '--input-local'], /could not parse|does not exist/, west);
+});
+
+test('ddate uses a supplied input zone unless an input flag explicitly reinterprets the day', () => {
+  const west = { env: { ...environment, TZ: 'America/Los_Angeles' } };
+  const format = '+%F %T %z';
+  for (const input of [['A1B', 'Asia/Tokyo'], ['A1B Asia/Tokyo'], ['--date', 'A1B Asia/Tokyo']]) {
+    success('ddate', [...input, format], '2010-01-10 15:00:00 +0000\n', west);
+    success('ddate', [...input, '--local', format], '2010-01-10 07:00:00 -0800\n', west);
+    success('ddate', [...input, '--input-utc', format], '2010-01-11 00:00:00 +0000\n', west);
+    success('ddate', [...input, '--input-local', format], '2010-01-11 08:00:00 +0000\n', west);
+    success('ddate', [...input, '--input-timezone', 'Europe/Berlin', format], '2010-01-10 23:00:00 +0000\n', west);
+  }
+  success('ddate', ['A1B America/Los_Angeles', format], '2010-01-11 08:00:00 +0000\n');
+  for (const input of ['A1B UTC', 'A1B GMT', 'A1B Z', 'A1BZ', 'A1B+00:00', 'A1B-00']) {
+    success('ddate', [input, format], '2010-01-11 00:00:00 +0000\n');
+  }
+  for (const input of [['A1B+05:30'], ['A1B+0530'], ['A1B +05:30'], ['A1B', '+05:30']]) {
+    success('ddate', [...input, format], '2010-01-10 18:30:00 +0000\n');
+    success('ddate', [...input, '--input-utc', format], '2010-01-11 00:00:00 +0000\n');
+    success('ddate', [...input, '--input-local', '--local', format], '2010-01-11 00:00:00 -0800\n', west);
+  }
+  success('ddate', ['A1B-0800', format], '2010-01-11 08:00:00 +0000\n');
+  success('ddate', ['--date', 'A1B+05:30', '+0500'], '0500\n');
+  failure('ddate', ['BCU Pacific/Apia', format], /could not interpret|does not exist/);
+  success('ddate', ['BCU Pacific/Apia', '--input-utc', '+%F'], '2011-12-30\n');
+  for (const input of ['A1B Imaginary/Zone', 'A1B+24:00', 'A1B+05:60', 'A1B+5:30', 'A1B UTC extra']) {
+    failure('ddate', [input], /Invalid|compact date/);
+  }
 });
 
 test('epoch units use exact decimals and reject malformed values', () => {
@@ -199,7 +279,7 @@ test('ddate preserves installed date formatting, including locale and directives
   for (const flags of choices) success('ddate', ['A1B', ...flags], systemDate(midnight, flags));
   success('ddate', ['--date', 'A1B', '+%F'], '2010-01-11\n');
   const env = { ...environment, TZ: 'Europe/Berlin', LC_ALL: 'C.UTF-8' };
-  success('ddate', ['A1B', '+%c %Z'], systemDate(midnight, ['+%c %Z'], env), { env });
+  success('ddate', ['A1B', '--input-local', '--local', '+%c %Z'], systemDate(midnight, ['+%c %Z'], env), { env });
 });
 
 test('invalid compact codes, unknown flags and duplicate/conflicting options fail', () => {
@@ -210,16 +290,20 @@ test('invalid compact codes, unknown flags and duplicate/conflicting options fai
   for (const command of ['cdate', 'ddate']) {
     const input = command === 'cdate' ? '2010-01-11' : 'A1B';
     for (const options of [['--wat'], ['--utc', '-u'], ['--universal', '--utc'], ['--debug', '-d'], ['-u', '-l'],
-      ['-u', '-z', 'UTC'], ['-z', 'Imaginary/Zone'], ['--date', input, input]]) {
+      ['-u', '-z', 'UTC'], ['-z', 'Imaginary/Zone'], ['--date', input, input],
+      ['--input-utc', '--input-local'], ['--input-local', '--input-timezone', 'UTC'],
+      ['--input-utc', '--input-timezone', 'UTC'], ['--input-local', '--input-local'],
+      ['--input-timezone', 'UTC', '--input-timezone', 'UTC'], ['--input-timezone', 'Imaginary/Zone']]) {
       failure(command, [input, ...options], /Unknown|more than once|Choose|Invalid|either|exactly/);
     }
+    failure(command, [input, '--input-timezone'], /argument/);
   }
   failure('cdate', ['-i', 'unknown', '2010-01-11'], /Unknown input format/);
   failure('cdate', ['-i', 'ymd'], /requires a date/);
   failure('cdate', ['2010-01-11', '-r', '/tmp/file'], /either/);
   failure('cdate', ['January 11, 2010', '-i', 'ymd'], /does not match/);
   failure('cdate', ['-i'], /argument/);
-  failure('ddate', ['A1B', 'A1C'], /exactly/);
+  failure('ddate', ['A1B', 'A1C'], /Invalid.*time zone/);
   failure('ddate', ['A1B', '+%F', '+%Y'], /at most/);
   failure('ddate', ['A1B', '-I', '+%F'], /Choose/);
   failure('ddate', ['A1B', '-R', '--rfc-2822'], /more than once/);
@@ -232,9 +316,13 @@ test('reference input uses modification time and fails on missing files', () => 
   try {
     const path = join(dir, 'file with spaces');
     writeFileSync(path, 'fixture\n');
-    const timestamp = new Date('2010-01-11T13:41:54Z');
+    const timestamp = new Date('2010-01-11T00:30:00Z');
     utimesSync(path, timestamp, timestamp);
     success('cdate', ['-r', path], 'A1B\n');
+    const west = { env: { ...environment, TZ: 'America/Los_Angeles' } };
+    success('cdate', ['-r', path], 'A1B\n', west);
+    success('cdate', ['-r', path, '--local'], 'A1A\n', west);
+    success('cdate', ['-r', path, '--input-local'], 'A1B\n', west);
     failure('cdate', ['-r', join(dir, 'missing')], /ENOENT/);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });

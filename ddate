@@ -16,26 +16,36 @@ const SCRIPT_NAME = basename(process.env['STANDALONE_SCRIPT_NAME'] ?? 'ddate');
 const ISO_PRECISIONS = ['date', 'hours', 'minutes', 'seconds', 'ns'];
 const RFC_PRECISIONS = ['date', 'seconds', 'ns'];
 const HELP = `ddate decodes a case-sensitive three-character compact calendar date.
-The supported range is 2000-01-01 through 2061-12-31. The result is midnight
-in local/system TZ time by default. Formatting is performed by date.
+The supported range is 2000-01-01 through 2061-12-31. Assume midnight in the
+input zone, then format in the output zone. Input uses a supplied zone or UTC;
+output defaults to UTC. Explicit input-zone flags override a supplied zone.
 
-Usage: ./ddate [OPTIONS] CODE [+FORMAT]
-       ./ddate [OPTIONS] --date CODE [+FORMAT]
+Usage: ./ddate [OPTIONS] CODE [ZONE] [+FORMAT]
+       ./ddate [OPTIONS] --date 'CODE [ZONE]' [+FORMAT]
 
 Options:
   -h, --help                 Show this help and exit.
   -V, --version              Show the command version and exit.
   -d, --debug                Write a private execution log in the current directory.
-      --date CODE            Supply the compact date instead of a positional CODE.
-  -u, --utc, --universal     Interpret and format midnight in UTC.
-  -l, --local                Explicitly use the system/TZ local time zone.
-  -z, --timezone ZONE        Use a named IANA time zone, e.g. America/New_York.
+      --date INPUT           Supply the compact date and optional zone as one value.
+  -u, --utc, --universal     Display the result in UTC (output default).
+  -l, --local                Display in system/TZ local time; input is unchanged.
+  -z, --timezone ZONE        Display in a named IANA zone; input is unchanged.
+      --input-utc            Reinterpret the code as UTC midnight.
+      --input-local          Reinterpret the code as system/TZ local midnight.
+      --input-timezone ZONE  Reinterpret the code as midnight in a named IANA zone.
   -I, --iso-8601[=FMT]       ISO output: date (default), hours, minutes, seconds, ns.
                             Also accepts attached short forms such as -Iseconds.
   -R, --rfc-email            RFC 5322 email output; --rfc-2822 is an alias.
       --rfc-3339 FMT        RFC 3339 output: date, seconds, or ns.
 
-With no formatting option, print the same default representation as date.
+With no formatting option, use date's default output format in the output zone.
+Select at most one option from each zone group. --local changes display only;
+use --input-local --local to interpret and display the same local calendar day.
+An optional input zone can be an IANA name, UTC, GMT, Z, or a numeric offset
+such as +05:30 or -0800. Z and numeric offsets may attach directly to the code.
+Without input flags, that zone determines midnight. With an input flag, the
+same calendar day is reinterpreted in the requested zone, not converted first.
 Use one +FORMAT or one ISO/RFC option. +FORMAT supports the installed date
 command's percent directives, padding flags, widths and locale modifiers.
 Attach an optional ISO precision with = or directly to -I.
@@ -45,11 +55,15 @@ Examples:
   ./ddate -u A1B '+%A, %B %d, %Y'
   ./ddate A1B --iso-8601=seconds
   ./ddate -u A1B --rfc-3339 seconds
+  ./ddate --input-local --local A1B '+%F %T %z'
+  ./ddate A1B America/Los_Angeles '+%F %T %z'
+  ./ddate A1B+05:30 --input-utc '+%F %T %z'
 
 Month characters must be 1-9 or A-C; day characters must be 1-9 or A-V.
 Invalid lengths, characters, calendars, duplicate/conflicting options and
 nonexistent local midnights fail without a decoded result. The code contains
-no time or original time zone. Selecting UTC reinterprets its calendar day.
+no time or original time zone. Input-zone options assign its assumed midnight;
+output-zone options convert that instant and can display a different day.
 No system clock changes or network requests are made. Debug logs contain input
 and paths, have mode 0600, and use _YYYYMMDD_HHMMSS_ddate.log without overwrite.
 Help and version do not run date or create logs.
@@ -61,7 +75,9 @@ interface Options {
   version: boolean;
   debug: boolean;
   code: string;
-  zone: string | undefined;
+  suppliedZone: string | undefined;
+  inputZone: string | undefined;
+  outputZone: string | undefined;
   formatArgs: string[];
 }
 let debugFile: FileHandle | undefined;
@@ -111,6 +127,26 @@ function calendarText(calendar: Calendar): string {
   return `${calendar.year}-${pad(calendar.month)}-${pad(calendar.day)}`;
 }
 
+function compactInput(input: string): { code: string; suppliedZone: string | undefined; zone: string | undefined } {
+  const match = /^([0-9A-Za-z]{3})(?: +([^\s]+)|(Z|[+-]\d{2}(?::?\d{2})?))?$/.exec(input);
+  if (!match) fail('A compact date must contain exactly three alphabet characters, optionally followed by a time zone');
+  const code = match[1] ?? fail('Missing compact date');
+  const suppliedZone = match[2] ?? match[3];
+  if (suppliedZone === undefined) return { code, suppliedZone, zone: undefined };
+  if (suppliedZone === 'Z' || suppliedZone === 'UTC' || suppliedZone === 'GMT') return { code, suppliedZone, zone: 'UTC0' };
+  const offset = /^([+-])(\d{2})(?::?(\d{2}))?$/.exec(suppliedZone);
+  if (offset) {
+    const hours = Number(offset[2]);
+    const minutes = Number(offset[3] ?? '0');
+    if (hours > 23 || minutes > 59) fail(`Invalid numeric input time-zone offset: ${suppliedZone}`);
+    // POSIX TZ signs are the reverse of ISO numeric offset signs.
+    return { code, suppliedZone, zone: `UTC${offset[1] === '+' ? '-' : '+'}${pad(hours)}:${pad(minutes)}` };
+  }
+  try { new Intl.DateTimeFormat('en', { timeZone: suppliedZone }); }
+  catch (error: unknown) { throw new Error(`Invalid IANA input time zone: ${suppliedZone}`, { cause: error }); }
+  return { code, suppliedZone, zone: suppliedZone };
+}
+
 function readOptions(): Options {
   const args = process.argv.slice(2);
   const terminator = args.indexOf('--');
@@ -129,6 +165,8 @@ function readOptions(): Options {
       debug: { type: 'boolean', short: 'd' }, date: { type: 'string' },
       utc: { type: 'boolean', short: 'u' }, universal: { type: 'boolean' },
       local: { type: 'boolean', short: 'l' }, timezone: { type: 'string', short: 'z' },
+      'input-utc': { type: 'boolean' }, 'input-local': { type: 'boolean' },
+      'input-timezone': { type: 'string' },
       'iso-8601': { type: 'string', short: 'I' }, 'rfc-email': { type: 'boolean', short: 'R' },
       'rfc-2822': { type: 'boolean' }, 'rfc-3339': { type: 'string' },
     },
@@ -141,20 +179,29 @@ function readOptions(): Options {
     seen.add(name);
   }
   if (values.help || values.version) return {
-    help: values.help ?? false, version: values.version ?? false, debug: false, code: '', zone: undefined, formatArgs: [],
+    help: values.help ?? false, version: values.version ?? false, debug: false, code: '', suppliedZone: undefined, inputZone: undefined, outputZone: undefined, formatArgs: [],
   };
   const utc = values.utc || values.universal;
   if (Number(Boolean(utc)) + Number(Boolean(values.local)) + Number(values.timezone !== undefined) > 1) fail('Choose only one of --utc, --local, or --timezone');
-  if (values.timezone !== undefined) {
-    try { new Intl.DateTimeFormat('en', { timeZone: values.timezone }); }
-    catch (error: unknown) { throw new Error(`Invalid IANA time zone: ${values.timezone}`, { cause: error }); }
+  if (Number(Boolean(values['input-utc'])) + Number(Boolean(values['input-local'])) + Number(values['input-timezone'] !== undefined) > 1) fail('Choose only one of --input-utc, --input-local, or --input-timezone');
+  for (const [option, zone] of [['timezone', values.timezone], ['input-timezone', values['input-timezone']]] as const) {
+    if (zone === undefined) continue;
+    try { new Intl.DateTimeFormat('en', { timeZone: zone }); }
+    catch (error: unknown) { throw new Error(`Invalid IANA time zone for --${option}: ${zone}`, { cause: error }); }
   }
   const formats = positionals.filter((argument) => argument.startsWith('+'));
   const codes = positionals.filter((argument) => !argument.startsWith('+'));
+  // A positive numeric offset following a bare code is its optional input
+  // zone. With --date, all positional + values remain output formats.
+  if (values.date === undefined && codes.length === 1 && /^[0-9A-Za-z]{3}$/.test(codes[0] ?? '')) {
+    const offsetIndex = formats.findIndex((argument) => /^\+\d{2}(?::?\d{2})?$/.test(argument));
+    if (offsetIndex !== -1) codes.push(formats.splice(offsetIndex, 1)[0] ?? fail('Missing input offset'));
+  }
   if (formats.length > 1) fail('Supply at most one +FORMAT');
-  if (codes.length > (values.date === undefined ? 1 : 0)) fail('Supply exactly one compact date, positionally or with --date');
-  const code = values.date ?? codes[0];
-  if (code === undefined) fail('A compact date is required; use --help for usage');
+  if (codes.length > (values.date === undefined ? 2 : 0)) fail('Supply exactly one compact date with an optional zone, positionally or with --date');
+  const input = values.date ?? (codes.length > 0 ? codes.join(' ') : undefined);
+  if (input === undefined) fail('A compact date is required; use --help for usage');
+  const { code, suppliedZone, zone } = compactInput(input);
   const iso = values['iso-8601'];
   const rfc = values['rfc-3339'];
   const email = values['rfc-email'] || values['rfc-2822'];
@@ -163,7 +210,9 @@ function readOptions(): Options {
   if (rfc !== undefined && !RFC_PRECISIONS.includes(rfc)) fail(`Invalid RFC 3339 precision; choose ${RFC_PRECISIONS.join(', ')}`);
   const formatArgs = iso !== undefined ? [`--iso-8601=${iso}`] : rfc !== undefined ? [`--rfc-3339=${rfc}`]
     : email ? ['--rfc-email'] : formats;
-  return { help: false, version: false, debug: values.debug ?? false, code, zone: utc ? 'UTC0' : values.timezone, formatArgs };
+  return { help: false, version: false, debug: values.debug ?? false, code, suppliedZone, formatArgs,
+    inputZone: values['input-local'] ? undefined : values['input-utc'] ? 'UTC0' : (values['input-timezone'] ?? zone ?? 'UTC0'),
+    outputZone: values.local ? undefined : (values.timezone ?? 'UTC0') };
 }
 
 async function runDate(value: string, formatArgs: string[], zone: string | undefined): Promise<string> {
@@ -186,15 +235,23 @@ async function main(): Promise<void> {
   if (options.help) { await writeAndFlush(process.stdout, HELP); return; }
   if (options.version) { await writeAndFlush(process.stdout, 'ddate 1.0.0\n'); return; }
   if (options.debug) await startDebug();
-  await record('Execution plan', { steps: ['Validate and decode all three characters', 'Verify midnight exists in the selected zone', 'Format with date', 'Flush one result'], options });
+  await record('Execution plan', { steps: ['Validate and decode all three characters', 'Resolve midnight in the input zone', 'Format in the output zone with date', 'Flush one result'], options });
   const calendar = decode(options.code);
   const text = calendarText(calendar);
   await record('Decoded and validated', { code: options.code, calendar, next: 'Verify that date does not normalize a missing local midnight.' });
   const midnight = `${text} 00:00:00`;
-  const verified = await runDate(midnight, ['+%Y-%m-%d %H:%M:%S'], options.zone);
-  if (verified.trim() !== midnight) fail(`Midnight does not exist in the selected zone for ${text}; try --utc`);
-  const output = await runDate(midnight, options.formatArgs, options.zone);
-  await record('Formatting validated', { formatArguments: options.formatArgs, output, reason: 'No time was encoded; output formatting uses the validated midnight.' });
+  const verified = await runDate(midnight, ['+%s.%N\n%Y-%m-%d %H:%M:%S'], options.inputZone);
+  const [epoch, clock, extra] = verified.trim().split('\n');
+  const match = /^(-?\d+)\.(\d{9})$/.exec(epoch ?? '');
+  if (!match || clock === undefined || extra !== undefined) fail(`Unexpected instant output from date: ${verified.trim()}`);
+  if (clock !== midnight) fail(`Midnight does not exist in the input zone for ${text}; try --input-utc`);
+  const nanoseconds = BigInt(match[1] ?? fail('Missing epoch seconds')) * 1_000_000_000n + BigInt(match[2] ?? fail('Missing epoch fraction'));
+  const sign = nanoseconds < 0n ? '-' : '';
+  const magnitude = nanoseconds < 0n ? -nanoseconds : nanoseconds;
+  const instant = `@${sign}${magnitude / 1_000_000_000n}.${String(magnitude % 1_000_000_000n).padStart(9, '0')}`;
+  await record('Input midnight validated', { midnight, instant, inputZone: options.inputZone ?? 'inherited system/TZ', reason: 'The decoded day assumes midnight in the input zone; this instant is independent of the display zone.' });
+  const output = await runDate(instant, options.formatArgs, options.outputZone);
+  await record('Formatting validated', { formatArguments: options.formatArgs, output, outputZone: options.outputZone ?? 'inherited system/TZ', reason: 'Convert the validated input midnight to the independent output zone.' });
   await writeAndFlush(process.stdout, output);
   await record('Completed', { calendar, next: 'Close the private log and return success.' });
 }

@@ -18,7 +18,7 @@ const INPUT_FORMATS = ['auto', 'ymd', 'mdy', 'dmy', 'unix', 'unix-ms', 'date', '
 const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
 const HELP = `cdate encodes a calendar date as three case-sensitive characters.
 Years 2000-2061 use 0-9, A-Z, then a-z; months and days use the same alphabet.
-With no input, encode today. Local time is the default, as with date.
+With no input, encode today. Input and output zones independently default to UTC.
 
 Usage: ./cdate [OPTIONS] [DATE OR TIMESTAMP ...]
 
@@ -30,9 +30,12 @@ Options:
   -i, --input-format FORMAT  auto (default), ymd, mdy, dmy, unix, unix-ms,
                             date (system parser), or javascript (Date.parse).
   -r, --reference FILE       Encode the file's last modification date.
-  -u, --utc, --universal     Select UTC for unzoned inputs and the output date.
-  -l, --local                Explicitly use the system/TZ local time zone.
-  -z, --timezone ZONE        Use a named IANA time zone, e.g. America/New_York.
+  -u, --utc, --universal     Select UTC for the encoded day (output default).
+  -l, --local                Select system/TZ local time for the encoded day only.
+  -z, --timezone ZONE        Select a named IANA zone for the encoded day only.
+      --input-utc            Interpret unzoned input in UTC (input default).
+      --input-local          Interpret unzoned input in system/TZ local time.
+      --input-timezone ZONE  Interpret unzoned input in a named IANA zone.
 
 Examples:
   ./cdate 2010-01-11
@@ -41,14 +44,18 @@ Examples:
   ./cdate -u 2010-01-11T13:41:54Z
   ./cdate --input-format dmy 11/01/2010
   ./cdate --input-format unix-ms 1263217314000
+  ./cdate --input-local --local 2010-01-11
 
 Auto detects ISO dates/times, YYYYMMDD, English dates, standard date and
 JavaScript date strings, @Unix seconds, 10-digit seconds and 13-digit
 milliseconds. Numeric dates with the year last use day/month when the first
 field exceeds 12; otherwise month/day. Use mdy or dmy to disambiguate.
-Unzoned calendar input uses the selected zone. An explicit offset determines
-the instant, which is then converted to the selected zone. javascript mode
-uses Date.parse's UTC rule for ISO date-only input after calendar validation.
+Input-zone options affect unzoned calendar/clock and relative expressions.
+An explicit offset determines the instant regardless of input-zone options.
+Output-zone options select the day encoded from that instant; they do not
+change input interpretation. Select at most one option from each zone group.
+javascript mode always parses ISO date-only input as UTC; its unzoned
+date-times use the input zone. Calendars are validated before Date.parse.
 Use -- before a positional input beginning with a hyphen.
 
 Invalid calendars, malformed input, duplicate/conflicting options, and output
@@ -67,7 +74,8 @@ interface Options {
   input: string | undefined;
   inputFormat: InputFormat;
   reference: string | undefined;
-  zone: string | undefined;
+  inputZone: string | undefined;
+  outputZone: string | undefined;
 }
 interface NormalizedInput { value: string; decision: string }
 
@@ -135,6 +143,8 @@ function readOptions(): Options {
       'input-format': { type: 'string', short: 'i' }, reference: { type: 'string', short: 'r' },
       utc: { type: 'boolean', short: 'u' }, universal: { type: 'boolean' },
       local: { type: 'boolean', short: 'l' }, timezone: { type: 'string', short: 'z' },
+      'input-utc': { type: 'boolean' }, 'input-local': { type: 'boolean' },
+      'input-timezone': { type: 'string' },
     },
   });
   const seen = new Set<string>();
@@ -147,13 +157,15 @@ function readOptions(): Options {
   // Help is a side-effect-free path, even when operational options need input.
   if (values.help || values.version) return {
     help: values.help ?? false, version: values.version ?? false, debug: false,
-    input: undefined, inputFormat: 'auto', reference: undefined, zone: undefined,
+    input: undefined, inputFormat: 'auto', reference: undefined, inputZone: undefined, outputZone: undefined,
   };
   const utc = values.utc || values.universal;
   if (Number(Boolean(utc)) + Number(Boolean(values.local)) + Number(values.timezone !== undefined) > 1) fail('Choose only one of --utc, --local, or --timezone');
-  if (values.timezone !== undefined) {
-    try { new Intl.DateTimeFormat('en', { timeZone: values.timezone }); }
-    catch (error: unknown) { throw new Error(`Invalid IANA time zone: ${values.timezone}`, { cause: error }); }
+  if (Number(Boolean(values['input-utc'])) + Number(Boolean(values['input-local'])) + Number(values['input-timezone'] !== undefined) > 1) fail('Choose only one of --input-utc, --input-local, or --input-timezone');
+  for (const [option, zone] of [['timezone', values.timezone], ['input-timezone', values['input-timezone']]] as const) {
+    if (zone === undefined) continue;
+    try { new Intl.DateTimeFormat('en', { timeZone: zone }); }
+    catch (error: unknown) { throw new Error(`Invalid IANA time zone for --${option}: ${zone}`, { cause: error }); }
   }
   if (values.date !== undefined && positionals.length > 0) fail('Use either --date or positional date words');
   const input = values.date ?? (positionals.length > 0 ? positionals.join(' ') : undefined);
@@ -164,12 +176,14 @@ function readOptions(): Options {
   if (inputFormat === undefined) fail(`Unknown input format ${requested}; choose ${INPUT_FORMATS.join(', ')}`);
   if (inputFormat !== 'auto' && input === undefined) fail('--input-format requires a date input');
   return { help: false, version: false, debug: values.debug ?? false, input, inputFormat,
-    reference: values.reference, zone: utc ? 'UTC0' : values.timezone };
+    reference: values.reference,
+    inputZone: values['input-local'] ? undefined : (values['input-timezone'] ?? 'UTC0'),
+    outputZone: values.local ? undefined : (values.timezone ?? 'UTC0') };
 }
 
-async function runDate(value: string | undefined, zone: string | undefined): Promise<string> {
-  const args = [...(value === undefined ? [] : [`--date=${value}`]), '+%Y-%m-%d %H:%M:%S'];
-  await record('Parse and select the calendar day', { command: 'date', arguments: args, zone: zone ?? 'inherited system/TZ', reason: 'Use the system date parser and its time-zone rules before checking the compact range.' });
+async function runDate(value: string | undefined, zone: string | undefined, format: string): Promise<string> {
+  const args = [...(value === undefined ? [] : [`--date=${value}`]), format];
+  await record('Run date', { command: 'date', arguments: args, zone: zone ?? 'inherited system/TZ', reason: 'Resolve input in its zone or render an absolute instant in the independent output zone.' });
   const output = await new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
     execFile('date', args, { encoding: 'utf8', timeout: DATE_TIMEOUT_MS, maxBuffer: 1024 * 1024,
       env: zone === undefined ? process.env : { ...process.env, TZ: zone } }, (error, stdout, stderr) => {
@@ -179,14 +193,39 @@ async function runDate(value: string | undefined, zone: string | undefined): Pro
   });
   await record('System parser result', output);
   if (output.stderr) await writeAndFlush(process.stderr, output.stderr);
-  const selected = output.stdout.trim();
+  return output.stdout.trim();
+}
+
+function epochFromNanoseconds(nanoseconds: bigint): string {
+  const sign = nanoseconds < 0n ? '-' : '';
+  const magnitude = nanoseconds < 0n ? -nanoseconds : nanoseconds;
+  return `@${sign}${magnitude / 1_000_000_000n}.${String(magnitude % 1_000_000_000n).padStart(9, '0')}`;
+}
+
+async function resolveInstant(value: string | undefined, zone: string | undefined): Promise<string> {
+  const hasCalendar = value !== undefined && (/^\d{1,4}[-/.]\d{1,2}[-/.]\d{1,4}(?:[T ]|$)/.test(value)
+    || (/\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\b/i.test(value) && /(?:^|\s)\d{4}(?:\s|$)/.test(value)));
+  const offsetClock = value !== undefined && /\d{1,2}:\d{2}(?::\d{2}(?:[.,]\d+)?)?\s*(?:Z|UTC|GMT|UT|[+-]\d{2}(?::?\d{2})?(?::?\d{2})?)(?:\s+\d{4})?$/i.test(value);
+  const standardDate = value !== undefined && /^[A-Za-z]{3} [A-Za-z]{3} +\d{1,2} \d{2}:\d{2}:\d{2} (?:[A-Za-z]{1,6}|[+-]\d{2}(?::?\d{2})?) \d{4}$/.test(value);
+  const absolute = value !== undefined && (/^@/.test(value) || (hasCalendar && offsetClock) || standardDate);
+  // An absolute input needs no default zone. Parse it in UTC to avoid local
+  // calendar normalization by date implementations before applying its offset.
+  const parserZone = absolute ? 'UTC0' : zone;
+  const output = await runDate(value, parserZone, '+%s.%N\n%Y-%m-%d %H:%M:%S');
+  const [epoch, clock, extra] = output.split('\n');
+  const match = /^(-?\d+)\.(\d{9})$/.exec(epoch ?? '');
+  if (!match || clock === undefined || extra !== undefined) fail(`Unexpected instant output from date: ${output}`);
   const expected = value === undefined ? null : /^(\d{4}-\d{2}-\d{2})(?:[T ](\d{2}:\d{2}:\d{2})(?:\.\d+)?)?$/.exec(value);
-  if (expected && selected !== `${expected[1]} ${expected[2] ?? '00:00:00'}`) {
-    fail(`The local calendar/clock time does not exist in the selected zone: ${value}; supply an explicit offset or use --utc`);
+  if (expected && clock !== `${expected[1]} ${expected[2] ?? '00:00:00'}`) {
+    fail(`The calendar/clock time does not exist in the input zone: ${value}; supply an explicit offset or use --input-utc`);
   }
-  await record('Local clock validation', { expected: expected ? `${expected[1]} ${expected[2] ?? '00:00:00'}` : null,
-    selected, reason: 'An unzoned absolute clock must round-trip without a DST or calendar adjustment.' });
-  return selected.split(' ')[0] ?? fail('Missing calendar output from date');
+  // %s is floor seconds, so its nonnegative %N fraction must be added even
+  // for negative epochs; a textual -1.500000000 represents -0.5 seconds here.
+  const nanoseconds = BigInt(match[1] ?? fail('Missing epoch seconds')) * 1_000_000_000n + BigInt(match[2] ?? fail('Missing epoch fraction'));
+  const instant = epochFromNanoseconds(nanoseconds);
+  await record('Input zone and clock validated', { expected: expected ? `${expected[1]} ${expected[2] ?? '00:00:00'}` : null,
+    clock, instant, zone: parserZone ?? 'inherited system/TZ', absolute, reason: 'Reject DST/calendar adjustments before converting the resolved instant to the output zone.' });
+  return instant;
 }
 
 function epochInput(input: string, milliseconds: boolean): NormalizedInput {
@@ -198,9 +237,7 @@ function epochInput(input: string, milliseconds: boolean): NormalizedInput {
   const scale = milliseconds ? 1_000_000n : 1_000_000_000n;
   let nanoseconds = BigInt(match[2] ?? fail('Missing timestamp digits')) * scale + BigInt(fraction.padEnd(precision, '0'));
   if (match[1] === '-') nanoseconds = -nanoseconds;
-  const sign = nanoseconds < 0n ? '-' : '';
-  const magnitude = nanoseconds < 0n ? -nanoseconds : nanoseconds;
-  return { value: `@${sign}${magnitude / 1_000_000_000n}.${String(magnitude % 1_000_000_000n).padStart(9, '0')}`,
+  return { value: epochFromNanoseconds(nanoseconds),
     decision: `Treat input as Unix ${milliseconds ? 'milliseconds' : 'seconds'}, with exact decimal arithmetic.` };
 }
 
@@ -327,31 +364,40 @@ async function main(): Promise<void> {
   if (options.help) { await writeAndFlush(process.stdout, HELP); return; }
   if (options.version) { await writeAndFlush(process.stdout, 'cdate 1.0.0\n'); return; }
   if (options.debug) await startDebug();
-  await record('Execution plan', { steps: ['Resolve input and validate calendar fields', 'Select the date in the requested zone', 'Check the 2000-2061 range', 'Encode and flush one result'], options });
+  await record('Execution plan', { steps: ['Resolve input in the input zone and validate calendar fields', 'Select the date in the output zone', 'Check the 2000-2061 range', 'Encode and flush one result'], options });
   let value: string | undefined;
   if (options.reference !== undefined) {
     await record('Read reference metadata', { path: options.reference, reason: 'Use the last modification instant without reading or changing file contents.' });
     const metadata = await stat(options.reference, { bigint: true });
     const milliseconds = metadata.mtimeNs / 1_000_000n;
     value = epochInput(String(milliseconds), true).value;
-    await record('Reference metadata found', { mtimeNanoseconds: String(metadata.mtimeNs), next: 'Convert the instant to the selected zone.' });
+    await record('Reference metadata found', { mtimeNanoseconds: String(metadata.mtimeNs), next: 'Convert the instant to the output zone.' });
   } else if (options.input !== undefined) {
     const normalized = normalizeInput(options.input, options.inputFormat);
     await record('Input validation and interpretation', normalized);
     value = normalized.value;
     if (options.inputFormat === 'javascript') {
       // Validate with the strict system parser first; Date.parse alone accepts Feb 30.
-      await runDate(value, options.zone);
-      if (options.zone !== undefined) process.env['TZ'] = options.zone;
-      const parsed = Date.parse(options.input);
+      const dateOnly = /^\d{4}(?:-\d{2}(?:-\d{2})?)?$/.test(options.input.trim());
+      await resolveInstant(value, dateOnly ? 'UTC0' : options.inputZone);
+      const originalZone = process.env['TZ'];
+      let parsed: number;
+      try {
+        if (options.inputZone !== undefined) process.env['TZ'] = options.inputZone;
+        parsed = Date.parse(options.input);
+      } finally {
+        if (originalZone === undefined) delete process.env['TZ'];
+        else process.env['TZ'] = originalZone;
+      }
       if (!Number.isFinite(parsed)) fail('JavaScript Date.parse cannot parse this input');
-      value = new Date(parsed).toISOString();
+      value = epochInput(String(parsed), true).value;
       await record('JavaScript date semantics selected', { instant: value, reason: 'Apply Date.parse semantics only after independent input validation.' });
     }
   } else {
-    await record('No input supplied', { next: 'Read the current day once from date in the selected zone.' });
+    await record('No input supplied', { next: 'Read the current instant once, then select its day in the output zone.' });
   }
-  const selected = await runDate(value, options.zone);
+  const instant = await resolveInstant(value, options.inputZone);
+  const selected = await runDate(instant, options.outputZone, '+%Y-%m-%d');
   const match = /^([+-]?\d{4,})-(\d{2})-(\d{2})$/.exec(selected);
   if (!match) fail(`Unexpected calendar output from date: ${selected}`);
   const calendar = { year: Number(match[1]), month: Number(match[2]), day: Number(match[3]) };
