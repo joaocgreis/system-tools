@@ -1,3 +1,8 @@
+/impl_rust/target/
+_????????_??????_*.log
+
+
+
 # Operating systems
 .DS_Store
 .AppleDouble
@@ -87,15 +92,6 @@ target/
 *.out
 go.work
 go.work.sum
-
-# C# / .NET
-bin/
-obj/
-TestResults/
-packages/
-*.nupkg
-*.snupkg
-artifacts/
 
 # Java / Kotlin / JVM
 .gradle/

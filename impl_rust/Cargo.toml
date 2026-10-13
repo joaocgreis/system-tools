@@ -1,0 +1,29 @@
+[package]
+name = "compact-date-tools"
+version = "1.0.0"
+edition = "2024"
+rust-version = "1.85"
+description = "Three-character Gregorian calendar date encoding and decoding"
+publish = false
+
+[dependencies]
+lexopt = "0.3.2"
+regex-lite = "0.1.9"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = "symbols"
+panic = "abort"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[[bin]]
+name = "cdate"
+path = "src/bin/cdate.rs"
+
+[[bin]]
+name = "ddate"
+path = "src/bin/ddate.rs"

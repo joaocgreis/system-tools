@@ -4,6 +4,7 @@
 ':' // Development validation: TypeScript 5.8+ with strict --erasableSyntaxOnly checking; use scripts/typecheck-cli.
 
 import { execFile } from 'node:child_process';
+import { existsSync, readFileSync } from 'node:fs';
 import { open } from 'node:fs/promises';
 import type { FileHandle } from 'node:fs/promises';
 import { basename, join } from 'node:path';
@@ -142,9 +143,29 @@ function compactInput(input: string): { code: string; suppliedZone: string | und
     // POSIX TZ signs are the reverse of ISO numeric offset signs.
     return { code, suppliedZone, zone: `UTC${offset[1] === '+' ? '-' : '+'}${pad(hours)}:${pad(minutes)}` };
   }
-  try { new Intl.DateTimeFormat('en', { timeZone: suppliedZone }); }
+  let zone: string;
+  try { zone = ianaZone(suppliedZone); }
   catch (error: unknown) { throw new Error(`Invalid IANA input time zone: ${suppliedZone}`, { cause: error }); }
-  return { code, suppliedZone, zone: suppliedZone };
+  return { code, suppliedZone, zone };
+}
+
+function ianaZone(zone: string): string {
+  if (/^[+-]/.test(zone)) fail(`Invalid IANA time zone: ${zone}`);
+  let canonical = new Intl.DateTimeFormat('en', { timeZone: zone }).resolvedOptions().timeZone;
+  const root = process.env['TZDIR'] ?? '/usr/share/zoneinfo';
+  if (existsSync(join(root, canonical))) return canonical;
+  const aliases = join(root, 'tzdata.zi');
+  if (existsSync(aliases)) {
+    const links = readFileSync(aliases, 'utf8').split('\n').map((line) => line.split(/\s+/));
+    for (let depth = 0; depth < 8; depth += 1) {
+      const link = links.find((fields) => (fields[0] === 'L' || fields[0] === 'Link') && fields[2]?.toLowerCase() === canonical.toLowerCase());
+      if (link === undefined) break;
+      canonical = link[1] ?? fail('Invalid time-zone alias data');
+      if (existsSync(join(root, canonical))) return canonical;
+    }
+  }
+  if (existsSync(join(root, zone))) return zone;
+  fail(`Invalid IANA time zone or missing time-zone data: ${zone}`);
 }
 
 function readOptions(): Options {
@@ -186,7 +207,7 @@ function readOptions(): Options {
   if (Number(Boolean(values['input-utc'])) + Number(Boolean(values['input-local'])) + Number(values['input-timezone'] !== undefined) > 1) fail('Choose only one of --input-utc, --input-local, or --input-timezone');
   for (const [option, zone] of [['timezone', values.timezone], ['input-timezone', values['input-timezone']]] as const) {
     if (zone === undefined) continue;
-    try { new Intl.DateTimeFormat('en', { timeZone: zone }); }
+    try { values[option] = ianaZone(zone); }
     catch (error: unknown) { throw new Error(`Invalid IANA time zone for --${option}: ${zone}`, { cause: error }); }
   }
   const formats = positionals.filter((argument) => argument.startsWith('+'));
@@ -221,7 +242,7 @@ async function runDate(value: string, formatArgs: string[], zone: string | undef
   const output = await new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
     execFile('date', args, { encoding: 'utf8', timeout: DATE_TIMEOUT_MS, maxBuffer: 1024 * 1024,
       env: zone === undefined ? process.env : { ...process.env, TZ: zone } }, (error, stdout, stderr) => {
-      if (error) reject(new Error(`date could not interpret or format midnight: ${stderr.trim() || error.message}`, { cause: error }));
+      if (error) reject(new Error(`date could not interpret or format midnight: ${[error.killed ? 'date subprocess killed or timed out' : '', error.message.slice(0, 4096), stderr.trim().slice(0, 4096)].filter(Boolean).join(': ')}`, { cause: error }));
       else resolve({ stdout, stderr });
     });
   });

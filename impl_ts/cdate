@@ -4,6 +4,7 @@
 ':' // Development validation: TypeScript 5.8+ with strict --erasableSyntaxOnly checking; use scripts/typecheck-cli.
 
 import { execFile } from 'node:child_process';
+import { existsSync, readFileSync } from 'node:fs';
 import { open, stat } from 'node:fs/promises';
 import type { FileHandle } from 'node:fs/promises';
 import { basename, join } from 'node:path';
@@ -134,6 +135,25 @@ function encode(calendar: Calendar): string {
   return `${year}${month}${day}`;
 }
 
+function ianaZone(zone: string): string {
+  if (/^[+-]/.test(zone)) fail(`Invalid IANA time zone: ${zone}`);
+  let canonical = new Intl.DateTimeFormat('en', { timeZone: zone }).resolvedOptions().timeZone;
+  const root = process.env['TZDIR'] ?? '/usr/share/zoneinfo';
+  if (existsSync(join(root, canonical))) return canonical;
+  const aliases = join(root, 'tzdata.zi');
+  if (existsSync(aliases)) {
+    const links = readFileSync(aliases, 'utf8').split('\n').map((line) => line.split(/\s+/));
+    for (let depth = 0; depth < 8; depth += 1) {
+      const link = links.find((fields) => (fields[0] === 'L' || fields[0] === 'Link') && fields[2]?.toLowerCase() === canonical.toLowerCase());
+      if (link === undefined) break;
+      canonical = link[1] ?? fail('Invalid time-zone alias data');
+      if (existsSync(join(root, canonical))) return canonical;
+    }
+  }
+  if (existsSync(join(root, zone))) return zone;
+  fail(`Invalid IANA time zone or missing time-zone data: ${zone}`);
+}
+
 function readOptions(): Options {
   const { values, positionals, tokens } = parseArgs({
     args: process.argv.slice(2), strict: true, allowPositionals: true, tokens: true,
@@ -164,7 +184,7 @@ function readOptions(): Options {
   if (Number(Boolean(values['input-utc'])) + Number(Boolean(values['input-local'])) + Number(values['input-timezone'] !== undefined) > 1) fail('Choose only one of --input-utc, --input-local, or --input-timezone');
   for (const [option, zone] of [['timezone', values.timezone], ['input-timezone', values['input-timezone']]] as const) {
     if (zone === undefined) continue;
-    try { new Intl.DateTimeFormat('en', { timeZone: zone }); }
+    try { values[option] = ianaZone(zone); }
     catch (error: unknown) { throw new Error(`Invalid IANA time zone for --${option}: ${zone}`, { cause: error }); }
   }
   if (values.date !== undefined && positionals.length > 0) fail('Use either --date or positional date words');
@@ -187,7 +207,7 @@ async function runDate(value: string | undefined, zone: string | undefined, form
   const output = await new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
     execFile('date', args, { encoding: 'utf8', timeout: DATE_TIMEOUT_MS, maxBuffer: 1024 * 1024,
       env: zone === undefined ? process.env : { ...process.env, TZ: zone } }, (error, stdout, stderr) => {
-      if (error) reject(new Error(`date could not parse the input: ${stderr.trim() || error.message}`, { cause: error }));
+      if (error) reject(new Error(`date could not parse the input: ${[error.killed ? 'date subprocess killed or timed out' : '', error.message.slice(0, 4096), stderr.trim().slice(0, 4096)].filter(Boolean).join(': ')}`, { cause: error }));
       else resolve({ stdout, stderr });
     });
   });

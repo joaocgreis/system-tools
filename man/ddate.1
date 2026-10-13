@@ -1,0 +1,191 @@
+.TH DDATE 1 "2026-10-12" "compact-date-tools 1.0.0" "User Commands"
+.SH NAME
+ddate \- decode and format a three-character compact calendar date
+.SH SYNOPSIS
+.B ddate
+.RI [ OPTIONS ]
+.I CODE
+.RI [ ZONE ]
+.RI [ +FORMAT ]
+.br
+.B ddate
+.RI [ OPTIONS ]
+.BI \-\-date " 'CODE [ZONE]'"
+.RI [ +FORMAT ]
+.SH DESCRIPTION
+.B ddate
+decodes one case-sensitive compact Gregorian calendar day, assumes midnight
+in its input zone, and displays the resulting instant in its output zone.
+For example, A1B means 2010-01-11.
+With no formatting option, use the installed date command's default format.
+The output zone defaults to UTC.
+.PP
+The input zone is selected in this order: an explicit input-zone option,
+a zone supplied with the code, then UTC. An explicit input flag reinterprets
+the same calendar day at midnight in the requested zone.
+Output-zone flags independently convert that instant for display.
+.SH COMPACT FORMAT
+Each position indexes
+.BR 0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz .
+The year index is the year minus 2000; month and day indexes are their ordinary
+calendar numbers. Years 2000-2009 use 0-9, 2010-2035 use A-Z, and 2036-2061 use
+a-z. Months use 1-9 and A-C; days use 1-9 and A-V.
+The supported range is 2000-01-01 (011) through 2061-12-31 (zCV).
+.PP
+Every code must describe an existing date. A2T, meaning 2010-02-29, is invalid;
+C2T, meaning 2012-02-29, is valid. Month and day zero are invalid.
+The code contains no original time or zone. Decoding cannot recover those.
+.SH OPTIONS
+.TP
+.BR \-h , " " \-\-help
+Print usage and exit successfully without running date or creating a log.
+.TP
+.BR \-V , " " \-\-version
+Print the command version and exit successfully.
+.TP
+.BR \-d , " " \-\-debug
+Create a private execution log in the current directory.
+.TP
+.BI \-\-date " INPUT"
+Supply the code and optional zone as one value instead of positional input.
+.TP
+.BR \-u , " " \-\-utc , " " \-\-universal
+Display in UTC. This is the output default.
+.TP
+.BR \-l , " " \-\-local
+Display in the inherited system or TZ local zone.
+This changes output only, leaving input interpretation unchanged.
+.TP
+.BR \-z " " ZONE ", " \-\-timezone " " ZONE
+Display in a named IANA zone. This changes output only.
+.TP
+.B \-\-input\-utc
+Reinterpret the decoded day as UTC midnight, overriding a supplied input zone.
+.TP
+.B \-\-input\-local
+Reinterpret the decoded day as inherited system or TZ local midnight,
+overriding a supplied input zone.
+.TP
+.BI \-\-input\-timezone " ZONE"
+Reinterpret the decoded day as midnight in a named IANA zone,
+overriding a supplied input zone.
+.TP
+.BR \-I [ FMT ], " " \-\-iso\-8601 [ =FMT ]
+ISO 8601 output. FMT is date, hours, minutes, seconds, or ns; the default is
+date. Attach optional precision, as in \-Iseconds or \-\-iso-8601=seconds.
+.TP
+.BR \-R , " " \-\-rfc\-email , " " \-\-rfc\-2822
+RFC 5322 email output.
+.TP
+.BI \-\-rfc\-3339 " FMT"
+RFC 3339 output. FMT is date, seconds, or ns.
+.TP
+.B +FORMAT
+Pass a custom output expression to the installed date command.
+.PP
+Choose one output format: +FORMAT or one ISO/RFC option.
+Choose at most one input-zone option and at most one output-zone option.
+The two zone groups can be combined independently.
+Unknown flags and duplicate singleton options, including aliases, are errors.
+.SH INPUT ZONES
+A zone supplied with the code may be an IANA name, UTC, GMT, Z, or a numeric
+offset. Named zones follow the code as a separate argument or within a quoted
+input. Z and numeric offsets may attach directly: A1BZ or A1B+05:30.
+.PP
+Offsets accept +HH, +HHMM, or +HH:MM and their negative equivalents.
+Hours must be 00-23 and minutes 00-59. A separate negative offset requires
+\-\- before it; attaching it to the code is simpler.
+Supplied zones are validated even when an explicit input flag overrides them.
+.PP
+With a bare positional code, a separate positive numeric offset is the input
+zone: ddate A1B +0500. With \-\-date, a separate +0500 is a literal output
+format; put an input zone inside the option value: \-\-date 'A1B +0500'.
+.SH OUTPUT FORMATTING
+Percent directives, padding flags, widths, and locale modifiers are passed
+to date unchanged. Supported directives and extensions follow the installed
+implementation. Common directives include %F for YYYY-MM-DD, %T for HH:MM:SS,
+%z for a numeric zone offset, %A and %B for localized names, %j for day of year,
+%s for epoch seconds, %n for a newline, and %t for a tab.
+.PP
+Time fields describe input midnight after conversion to the output zone.
+They need not show midnight or the same calendar day. Nanoseconds are zero.
+Changing only the output zone leaves %s unchanged.
+.PP
+Midnight must exist in the input zone. A skipped local day, such as 2011-12-30
+in Pacific/Apia, fails if that zone is selected for input.
+Selecting that zone only for output converts an existing instant and succeeds.
+.SH EXAMPLES
+.nf
+ddate A1B +%F
+.fi
+Prints 2010-01-11.
+.PP
+.nf
+ddate A1B Asia/Tokyo '+%F %T %z'
+.fi
+Prints 2010-01-10 15:00:00 +0000: Tokyo midnight displayed in UTC.
+.PP
+.nf
+ddate A1B+05:30 '+%F %T %z'
+.fi
+Prints 2010-01-10 18:30:00 +0000.
+.PP
+.nf
+ddate A1B+05:30 \-\-input-utc '+%F %T %z'
+.fi
+Prints 2010-01-11 00:00:00 +0000: the same day reinterpreted as UTC midnight.
+.PP
+.nf
+TZ=America/Los_Angeles ddate A1B \-\-local '+%F %T %z'
+.fi
+Prints 2010-01-10 16:00:00 -0800: UTC midnight displayed locally.
+.PP
+.nf
+TZ=America/Los_Angeles ddate A1B \-\-input-local \-\-local '+%F %T %z'
+.fi
+Prints 2010-01-11 00:00:00 -0800: local midnight displayed locally.
+.PP
+.nf
+ddate A1B \-\-iso-8601=seconds
+ddate A1B \-\-rfc-3339 ns
+ddate A1B '+%A, %B %d, %Y'
+.fi
+.SH ENVIRONMENT
+.TP
+.B PATH
+Locates the GNU-compatible date command. TypeScript also requires Node.js.
+.TP
+.B TZ
+Supplies the local zone for input or output local options.
+It also determines the debug-log filename timestamp.
+.TP
+.BR LC_ALL , " " LC_TIME , " " LANG
+Inherited by date for output formatting.
+.TP
+.B TZDIR
+Time-zone data directory when supported by the installed date implementation.
+Rust also uses it to validate named zones; the default is /usr/share/zoneinfo.
+.SH OUTPUT AND EXIT STATUS
+Success prints the requested result and exits 0.
+Errors go to stderr and exit 1. Invalid codes, invalid zones, nonexistent
+midnights, conflicting flags, parser failures, timeouts, and file errors are
+errors. Ordinary errors produce no decoded result. Check exit status:
+a late output or log-close failure can occur after the result was written.
+.SH FILES
+.B _YYYYMMDD_HHMMSS_ddate.log
+is created in the current directory by debug mode. Its timestamp uses local
+time independently of input and output flags. Renaming the executable changes
+the basename in the log filename. Files are created exclusively with mode
+0600; a same-second collision fails without overwriting an existing log.
+.PP
+Logs record arguments, paths, zones, parsing, formatting, validation, and
+errors. They may contain private input. Argument parsing happens before a log
+is opened. Help and version never create one, even with debug selected.
+.SH NOTES
+Both implementations require a GNU-compatible date; BSD date is insufficient.
+Each date call has a five-second timeout and a one-MiB limit per output pipe.
+Arguments are passed without shell interpolation. No clock-setting flags or
+network requests are used.
+.SH SEE ALSO
+.BR cdate (1),
+.BR date (1)

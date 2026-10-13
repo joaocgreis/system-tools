@@ -1,0 +1,47 @@
+cdate encodes a calendar date as three case-sensitive characters.
+Years 2000-2061 use 0-9, A-Z, then a-z; months and days use the same alphabet.
+With no input, encode today. Input and output zones independently default to UTC.
+
+Usage: ./cdate [OPTIONS] [DATE OR TIMESTAMP ...]
+
+Options:
+  -h, --help                 Show this help and exit.
+  -V, --version              Show the command version and exit.
+  -d, --debug                Write a private execution log in the current directory.
+      --date STRING          Supply input instead of positional words.
+  -i, --input-format FORMAT  auto (default), ymd, mdy, dmy, unix, unix-ms,
+                            date (system parser), or javascript (Date.parse).
+  -r, --reference FILE       Encode the file's last modification date.
+  -u, --utc, --universal     Select UTC for the encoded day (output default).
+  -l, --local                Select system/TZ local time for the encoded day only.
+  -z, --timezone ZONE        Select a named IANA zone for the encoded day only.
+      --input-utc            Interpret unzoned input in UTC (input default).
+      --input-local          Interpret unzoned input in system/TZ local time.
+      --input-timezone ZONE  Interpret unzoned input in a named IANA zone.
+
+Examples:
+  ./cdate 2010-01-11
+  ./cdate 20100111
+  ./cdate January 11, 2010
+  ./cdate -u 2010-01-11T13:41:54Z
+  ./cdate --input-format dmy 11/01/2010
+  ./cdate --input-format unix-ms 1263217314000
+  ./cdate --input-local --local 2010-01-11
+
+Auto detects ISO dates/times, YYYYMMDD, English dates, standard date and
+JavaScript date strings, @Unix seconds, 10-digit seconds and 13-digit
+milliseconds. Numeric dates with the year last use day/month when the first
+field exceeds 12; otherwise month/day. Use mdy or dmy to disambiguate.
+Input-zone options affect unzoned calendar/clock and relative expressions.
+An explicit offset determines the instant regardless of input-zone options.
+Output-zone options select the day encoded from that instant; they do not
+change input interpretation. Select at most one option from each zone group.
+javascript mode always parses ISO date-only input as UTC; its unzoned
+date-times use the input zone. Calendars are validated before Date.parse.
+Use -- before a positional input beginning with a hyphen.
+
+Invalid calendars, malformed input, duplicate/conflicting options, and output
+dates outside 2000-01-01 through 2061-12-31 fail without a compact result.
+No system clock changes or network requests are made. Debug logs contain input
+and paths, have mode 0600, and use _YYYYMMDD_HHMMSS_cdate.log without overwrite.
+Help and version do not read reference files or create logs.

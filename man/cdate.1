@@ -1,0 +1,203 @@
+.TH CDATE 1 "2026-10-12" "compact-date-tools 1.0.0" "User Commands"
+.SH NAME
+cdate \- encode a calendar date as three compact characters
+.SH SYNOPSIS
+.B cdate
+.RI [ OPTIONS ]
+.RI [ "DATE OR TIMESTAMP ..." ]
+.br
+.B cdate
+.RI [ OPTIONS ]
+.BI \-\-date " STRING"
+.br
+.B cdate
+.RI [ OPTIONS ]
+.BI \-\-reference " FILE"
+.SH DESCRIPTION
+.B cdate
+stores a Gregorian calendar year, month, and day in three case-sensitive
+characters. For example,
+.B A1B
+means 2010-01-11: A is 2010, 1 is January, and B is day 11.
+With no input, encode the current day in the output zone.
+The output zone defaults to UTC.
+.PP
+Input and output zones are independent. Unzoned input defaults to UTC.
+An input-zone option supplies a missing zone; an explicit offset determines
+the instant itself. An output-zone option selects the calendar day to encode.
+.SH COMPACT FORMAT
+Each position indexes the alphabet
+.BR 0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz .
+The year index is the year minus 2000. The month and day indexes are their
+ordinary calendar numbers.
+.PP
+Years 2000-2009 use 0-9, 2010-2035 use A-Z, and 2036-2061 use a-z.
+Months 1-9 use 1-9; months 10-12 use A-C.
+Days 1-9 use 1-9; days 10-31 use A-V.
+The supported range is 2000-01-01 (011) through 2061-12-31 (zCV).
+There are 22,646 valid codes.
+.PP
+Calendar validity is required. Month or day zero, February 30, and February 29
+in a non-leap year are invalid. The final day in the output zone must fit the
+supported range. The code stores no time, offset, or original zone.
+.SH OPTIONS
+.TP
+.BR \-h , " " \-\-help
+Print usage and exit successfully without operational side effects.
+.TP
+.BR \-V , " " \-\-version
+Print the command version and exit successfully.
+.TP
+.BR \-d , " " \-\-debug
+Create a private execution log in the current directory.
+.TP
+.BI \-\-date " STRING"
+Use one date expression instead of positional input. Positional words are
+otherwise joined with spaces.
+.TP
+.BR \-i " " FORMAT ", " \-\-input\-format " " FORMAT
+Select auto, ymd, mdy, dmy, unix, unix-ms, date, or javascript.
+The default is auto. An explicit format requires a date input.
+.TP
+.BR \-r " " FILE ", " \-\-reference " " FILE
+Encode the file's last modification instant in the output zone.
+The file contents are not read. Cannot be combined with a date input.
+.TP
+.BR \-u , " " \-\-utc , " " \-\-universal
+Encode the day in UTC. This is the output default.
+.TP
+.BR \-l , " " \-\-local
+Encode the day in the inherited system or TZ local zone.
+This changes output only.
+.TP
+.BR \-z " " ZONE ", " \-\-timezone " " ZONE
+Encode the day in a named IANA zone. This changes output only.
+.TP
+.B \-\-input\-utc
+Interpret unzoned input in UTC. This is the input default.
+.TP
+.B \-\-input\-local
+Interpret unzoned input in the inherited system or TZ local zone.
+.TP
+.BI \-\-input\-timezone " ZONE"
+Interpret unzoned input in a named IANA zone.
+.PP
+Choose at most one option in each zone group. Input and output options can be
+combined. Duplicate singleton options, including aliases, are errors.
+Use
+.B \-\-
+before a positional input beginning with a hyphen, or use an attached option
+value such as
+.BR \-\-date=\-1 .
+.SH INPUT FORMATS
+.SS Automatic detection
+Recognized forms include ISO dates and date-times, eight-digit YYYYMMDD,
+English month names, RFC email dates, standard date output, standard English
+JavaScript Date strings, and ordinary numeric locale date/time strings.
+Bare ISO years and year-months mean the first day of that period.
+Unzoned calendar dates mean midnight in the input zone.
+.PP
+Numeric dates with the year last use month/day/year unless the first field
+exceeds 12, in which case they use day/month/year. Select mdy or dmy to resolve
+ambiguity. Numeric two-digit years use 00-68 for 2000-2068 and 69-99 for
+1969-1999; output range checks still apply.
+.PP
+A leading @ means Unix seconds. Ten-digit values mean Unix seconds and
+thirteen-digit values mean Unix milliseconds; fractions are allowed.
+Other expressions, including relative dates, go to the installed date parser.
+Time-only strings use the current day in the input zone.
+.SS Explicit formats
+ymd, mdy, and dmy require numeric calendar input, optionally followed by a clock
+and zone. unix accepts seconds with up to nine fractional digits.
+unix-ms accepts milliseconds with up to six fractional digits.
+Epoch arithmetic is exact; excess precision, scientific notation, and trailing
+junk are errors. Use explicit epoch modes for other digit counts.
+.PP
+date passes the input grammar directly to the installed date command,
+bypassing automatic numeric interpretation.
+.PP
+javascript applies JavaScript date semantics after independent validation.
+ISO date-only strings remain UTC even with an input-zone option.
+Unzoned date-times use the input zone. Precision is milliseconds.
+The TypeScript implementation uses native Date.parse; Rust implements standard
+ISO and English strings without a JavaScript runtime. Nonstandard legacy
+JavaScript parsing can differ; use ISO input for interchange.
+.SS Validation and limits
+Valid ISO 24:00 with zero minutes, seconds, and fraction means the next day's
+midnight. Other hour-24 clocks, leap seconds, impossible calendars, invalid
+numeric offsets, and skipped unzoned clock times are rejected.
+For repeated times at a DST fall-back, the system parser chooses an occurrence;
+use an explicit offset when the instant matters.
+.PP
+Arbitrary translated month names, non-Gregorian calendars, alternate digit
+systems, and custom formats cannot be reliably autodetected.
+Prefer ISO output, or select a numeric format. System parser grammar and
+relative-date behavior depend on the installed date implementation.
+.SH EXAMPLES
+.nf
+cdate 2010-01-11
+cdate 20100111
+cdate January 11, 2010
+cdate 2010-01-11T13:41:54Z
+.fi
+All print A1B.
+.PP
+.nf
+cdate \-i dmy 11/01/2010
+cdate \-i unix-ms 1263217314000
+.fi
+Both print A1B in UTC.
+.PP
+.nf
+TZ=America/Los_Angeles cdate \-\-local 2010-01-11
+.fi
+Prints A1A: UTC midnight falls on January 10 locally.
+.PP
+.nf
+TZ=America/Los_Angeles cdate \-\-input-local \-\-local 2010-01-11
+.fi
+Prints A1B: input and output both use the local zone.
+.PP
+.nf
+cdate \-\-input-timezone Asia/Tokyo 2010-01-11
+.fi
+Prints A1A: Tokyo midnight is January 10 at 15:00 UTC.
+.SH ENVIRONMENT
+.TP
+.B PATH
+Locates the GNU-compatible date command. TypeScript also requires Node.js.
+.TP
+.B TZ
+Supplies the local zone when an input or output local option is selected.
+It also determines the debug-log filename timestamp.
+.TP
+.BR LC_ALL , " " LC_TIME , " " LANG
+Inherited by date. Localized parser support depends on that implementation.
+.TP
+.B TZDIR
+Time-zone data directory when supported by the installed date implementation.
+Rust also uses it to validate named zones; the default is /usr/share/zoneinfo.
+.SH OUTPUT AND EXIT STATUS
+Success prints one code and a newline and exits 0.
+Invalid input, unrepresentable output, argument errors, file errors, parser
+failures, timeouts, or logging failures exit 1 with an error on stderr.
+Ordinary errors produce no compact result. Callers must check exit status:
+a late output or log-close failure can occur after the result was written.
+.SH FILES
+.B _YYYYMMDD_HHMMSS_cdate.log
+is created in the current directory by debug mode. Its timestamp uses local
+time independently of input and output flags. Renaming the executable changes
+the basename in the log filename. Files are created exclusively with mode
+0600; a same-second collision fails without overwriting an existing log.
+.PP
+Logs record arguments, paths, zone choices, parsing, validation, and errors.
+They may contain private input. Argument parsing happens before a log is
+opened. Help and version never create one, even with debug selected.
+.SH NOTES
+Both implementations require a GNU-compatible date; BSD date is insufficient.
+Each date call has a five-second timeout and a one-MiB limit per output pipe.
+Arguments are passed without shell interpolation. No clock-setting flags or
+network requests are used.
+.SH SEE ALSO
+.BR ddate (1),
+.BR date (1)

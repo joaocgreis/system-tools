@@ -1,0 +1,52 @@
+ddate decodes a case-sensitive three-character compact calendar date.
+The supported range is 2000-01-01 through 2061-12-31. Assume midnight in the
+input zone, then format in the output zone. Input uses a supplied zone or UTC;
+output defaults to UTC. Explicit input-zone flags override a supplied zone.
+
+Usage: ./ddate [OPTIONS] CODE [ZONE] [+FORMAT]
+       ./ddate [OPTIONS] --date 'CODE [ZONE]' [+FORMAT]
+
+Options:
+  -h, --help                 Show this help and exit.
+  -V, --version              Show the command version and exit.
+  -d, --debug                Write a private execution log in the current directory.
+      --date INPUT           Supply the compact date and optional zone as one value.
+  -u, --utc, --universal     Display the result in UTC (output default).
+  -l, --local                Display in system/TZ local time; input is unchanged.
+  -z, --timezone ZONE        Display in a named IANA zone; input is unchanged.
+      --input-utc            Reinterpret the code as UTC midnight.
+      --input-local          Reinterpret the code as system/TZ local midnight.
+      --input-timezone ZONE  Reinterpret the code as midnight in a named IANA zone.
+  -I, --iso-8601[=FMT]       ISO output: date (default), hours, minutes, seconds, ns.
+                            Also accepts attached short forms such as -Iseconds.
+  -R, --rfc-email            RFC 5322 email output; --rfc-2822 is an alias.
+      --rfc-3339 FMT        RFC 3339 output: date, seconds, or ns.
+
+With no formatting option, use date's default output format in the output zone.
+Select at most one option from each zone group. --local changes display only;
+use --input-local --local to interpret and display the same local calendar day.
+An optional input zone can be an IANA name, UTC, GMT, Z, or a numeric offset
+such as +05:30 or -0800. Z and numeric offsets may attach directly to the code.
+Without input flags, that zone determines midnight. With an input flag, the
+same calendar day is reinterpreted in the requested zone, not converted first.
+Use one +FORMAT or one ISO/RFC option. +FORMAT supports the installed date
+command's percent directives, padding flags, widths and locale modifiers.
+Attach an optional ISO precision with = or directly to -I.
+
+Examples:
+  ./ddate A1B +%F
+  ./ddate -u A1B '+%A, %B %d, %Y'
+  ./ddate A1B --iso-8601=seconds
+  ./ddate -u A1B --rfc-3339 seconds
+  ./ddate --input-local --local A1B '+%F %T %z'
+  ./ddate A1B America/Los_Angeles '+%F %T %z'
+  ./ddate A1B+05:30 --input-utc '+%F %T %z'
+
+Month characters must be 1-9 or A-C; day characters must be 1-9 or A-V.
+Invalid lengths, characters, calendars, duplicate/conflicting options and
+nonexistent local midnights fail without a decoded result. The code contains
+no time or original time zone. Input-zone options assign its assumed midnight;
+output-zone options convert that instant and can display a different day.
+No system clock changes or network requests are made. Debug logs contain input
+and paths, have mode 0600, and use _YYYYMMDD_HHMMSS_ddate.log without overwrite.
+Help and version do not run date or create logs.

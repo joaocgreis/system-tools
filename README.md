@@ -9,44 +9,50 @@ For example, `A1B` means January 11, 2010: `A` is the year 2010, `1` is January,
 `cdate` converts a date to this compact format. `ddate` decodes it and formats the result with the installed `date` command.
 
 ```sh
-./cdate 2010-01-11                      # A1B
-./cdate 20100111                        # A1B
-./cdate January 11, 2010                # A1B
-./cdate -u 2010-01-11T13:41:54Z          # A1B
-./ddate A1B +%F                         # 2010-01-11
-./ddate -u A1B '+%A, %B %d, %Y'          # Monday, January 11, 2010
+cdate 2010-01-11                      # A1B
+cdate 20100111                        # A1B
+cdate January 11, 2010                # A1B
+cdate -u 2010-01-11T13:41:54Z          # A1B
+ddate A1B +%F                         # 2010-01-11
+ddate -u A1B '+%A, %B %d, %Y'          # Monday, January 11, 2010
 ```
 
-Run `./cdate` without input to encode today in UTC. Input and output time zones default to UTC when none is supplied. `-l` or `--local` changes only the output zone to the system's local time or the `TZ` environment variable. `--input-local` changes input interpretation. Use both flags to interpret and output a local calendar day.
+Run `cdate` without input to encode today in UTC. Input and output time zones default to UTC when none is supplied. `-l` or `--local` changes only the output zone to the system's local time or the `TZ` environment variable. `--input-local` changes input interpretation. Use both flags to interpret and output a local calendar day.
 
 Named zones have the same separation, with `--input-timezone ZONE` for input and `-z ZONE` for output. `ddate` can also take a zone with its code; an explicit input flag overrides that zone.
 
-## Requirements and installation
+## Implementations and installation
 
-Each command is an independent, extensionless executable containing TypeScript. It requires:
+The repository contains two implementations with the same CLI and shared compatibility tests:
 
-- Node.js 22.18 or newer on `PATH`.
-- A GNU-compatible `date` on `PATH`, supporting `--date`, percent format directives, and the output options you use. The implementation was tested with uutils coreutils 0.8.0.
-- A Unix environment with `/bin/sh` and time-zone data for the requested zones.
+- [TypeScript](impl_ts/README.md): independent executable files in `impl_ts/`, requiring Node.js 22.18 or newer. Run them directly; no build is needed.
+- [Rust](impl_rust/README.md): native executables built from `impl_rust/`, requiring Rust only at build time. Release builds prioritize binary size.
 
-There is no package manifest, build step, third-party runtime dependency, or runtime transpiler. `npx` is needed only for development typechecks. BSD/macOS `date` is not compatible with `--date`; install GNU coreutils and make its `date` available on `PATH` before running these commands.
+Both need a GNU-compatible `date` on `PATH`, supporting `--date`, percent directives, and the output modes you use, plus Unix time-zone data. Tests use uutils coreutils 0.8.0. BSD/macOS `date` lacks the required interface; install GNU coreutils and put its `date` on `PATH`.
 
-Run the files directly from this directory:
-
-```sh
-./cdate --help
-./ddate --help
-```
-
-To install them on your own `PATH`, first preserve an existing command if you need it, then copy both executables:
+Run either implementation from the repository root:
 
 ```sh
-mkdir -p "$HOME/.local/bin"
-# If cdate is already installed, preserve it before the next command.
-install -m 755 cdate ddate "$HOME/.local/bin/"
+./impl_ts/cdate 2010-01-11                     # A1B
+./impl_ts/ddate A1B +%F                        # 2010-01-11
+
+timeout 60s cargo build --manifest-path impl_rust/Cargo.toml --release --locked
+./impl_rust/target/release/cdate 2010-01-11     # A1B
+./impl_rust/target/release/ddate A1B +%F        # 2010-01-11
 ```
 
-The install command replaces files with those names. Creating the commands in this repository does not install them or modify an existing `cdate` elsewhere.
+Examples elsewhere in this README use `cdate` and `ddate` on `PATH`. See each implementation's README for installation commands. Installing one implementation replaces commands with the same names in the destination; preserve an older installation first if needed. Building or running this repository does not modify existing commands elsewhere.
+
+The shared [cdate man page](man/cdate.1) and [ddate man page](man/ddate.1) apply to either implementation. Read them locally or install them for `man cdate` and `man ddate`:
+
+```sh
+man -l man/cdate.1
+man -l man/ddate.1
+mkdir -p "$HOME/.local/share/man/man1"
+install -m 644 man/cdate.1 man/ddate.1 "$HOME/.local/share/man/man1/"
+```
+
+If your `man` configuration does not search that directory, use `man -M "$HOME/.local/share/man" cdate`, or add it to your configured manual search path.
 
 ## The encoding
 
@@ -71,10 +77,10 @@ No time, offset, time-zone name, or original input format is stored. Decoding re
 ## cdate input and options
 
 ```text
-./cdate [OPTIONS] [DATE OR TIMESTAMP ...]
+cdate [OPTIONS] [DATE OR TIMESTAMP ...]
 ```
 
-Positional words are joined with spaces, so both `./cdate January 11, 2010` and `./cdate 'January 11, 2010'` work. Supply one date expression. `--date STRING` is an alternative to positional input.
+Positional words are joined with spaces, so both `cdate January 11, 2010` and `cdate 'January 11, 2010'` work. Supply one date expression. `--date STRING` is an alternative to positional input.
 
 | Option | Behavior |
 | --- | --- |
@@ -124,12 +130,12 @@ Other input, such as `today`, `yesterday`, `tomorrow`, `next Friday`, or `'2010-
 For ambiguous input, select a format:
 
 ```sh
-./cdate -i dmy 11/01/2010          # A1B, January 11
-./cdate -i mdy 11/01/2010          # AB1, November 1
-./cdate -i dmy 11012010            # A1B
-./cdate -i mdy 01112010            # A1B
-./cdate -i unix 1263217314         # A1B in UTC
-./cdate -i unix-ms 1263217314000   # A1B in UTC
+cdate -i dmy 11/01/2010          # A1B, January 11
+cdate -i mdy 11/01/2010          # AB1, November 1
+cdate -i dmy 11012010            # A1B
+cdate -i mdy 01112010            # A1B
+cdate -i unix 1263217314         # A1B in UTC
+cdate -i unix-ms 1263217314000   # A1B in UTC
 ```
 
 `ymd`, `mdy`, and `dmy` require numeric calendar input, optionally followed by a time and zone. `date` delegates the input grammar directly to the system command, bypassing automatic numeric interpretation. For example, the installed `date` can interpret bare `2010` as 20:10 today, while `auto` treats it as 2010-01-01.
@@ -138,14 +144,14 @@ For ambiguous input, select a format:
 
 ### Independent input and output zones
 
-Both zones default to UTC, even when `TZ` names another zone. The input zone supplies the missing zone for unzoned calendar dates, clock times, and relative expressions. A date-only input means midnight in that input zone. The output zone then determines which calendar day gets encoded. Changing `--local`, `--utc`, or `--timezone` never changes input interpretation.
+Both zones default to UTC, even when `TZ` names another zone. The input zone supplies the missing zone for unzoned calendar dates, clock times, and relative expressions. Named-zone aliases are resolved against available time-zone data so that the system parser receives a usable zone name. A date-only input means midnight in that input zone. The output zone then determines which calendar day gets encoded. Changing `--local`, `--utc`, or `--timezone` never changes input interpretation.
 
 Explicit `Z`, numeric offsets, and zones recognized by the installed parser determine the input instant themselves. Input-zone options do not override them. Unix timestamps, file modification instants, and the current instant with no input also remain unchanged by input-zone options.
 
 ```sh
-TZ=America/Los_Angeles ./cdate 2010-01-11T00:30:00Z          # A1B, January 11 in UTC
-TZ=America/Los_Angeles ./cdate --local 2010-01-11T00:30:00Z  # A1A, January 10 locally
-./cdate -z Asia/Kolkata 2010-01-11T23:30:00Z                # A1C, January 12
+TZ=America/Los_Angeles cdate 2010-01-11T00:30:00Z          # A1B, January 11 in UTC
+TZ=America/Los_Angeles cdate --local 2010-01-11T00:30:00Z  # A1A, January 10 locally
+cdate -z Asia/Kolkata 2010-01-11T23:30:00Z                # A1C, January 12
 ```
 
 Unzoned input can also move to another day during output conversion. With `TZ=America/Los_Angeles`, the combinations below show each flag's effect:
@@ -158,16 +164,16 @@ Unzoned input can also move to another day during output conversion. With `TZ=Am
 | `2010-01-11 23:30:00` | `--input-local` | January 11, 23:30 locally | `A1C`, January 12 UTC |
 | `2010-01-11 23:30:00` | `--input-local --local` | January 11, 23:30 locally | `A1B`, January 11 locally |
 
-For example, `./cdate --input-timezone Asia/Tokyo 2010-01-11` encodes `A1A`: Tokyo midnight is January 10 at 15:00 UTC. Add `--timezone Asia/Tokyo` to output `A1B` instead.
+For example, `cdate --input-timezone Asia/Tokyo 2010-01-11` encodes `A1A`: Tokyo midnight is January 10 at 15:00 UTC. Add `--timezone Asia/Tokyo` to output `A1B` instead.
 
 ### JavaScript semantics and clock validation
 
-[`Date.parse` interprets ISO date-only strings as UTC, while an ISO date-time without an offset uses local time](https://tc39.es/ecma262/multipage/numbers-and-dates.html#sec-date.parse). Choose `-i javascript` to apply those semantics. The input zone supplies JavaScript's local-time interpretation for unzoned date-times; ISO date-only strings stay UTC even with `--input-local`. The output zone still controls the encoded day. Calendar validity is checked independently before `Date.parse` to reject invalid dates that JavaScript would otherwise roll into another month.
+[`Date.parse` interprets ISO date-only strings as UTC, while an ISO date-time without an offset uses local time](https://tc39.es/ecma262/multipage/numbers-and-dates.html#sec-date.parse). Choose `-i javascript` to apply those semantics. The input zone supplies JavaScript's local-time interpretation for unzoned date-times; ISO date-only strings stay UTC even with `--input-local`. The output zone still controls the encoded day. Calendar validity is checked independently to reject invalid dates that JavaScript would otherwise roll into another month. TypeScript uses native `Date.parse`; Rust implements the standard ISO and English string behavior with the system parser. Nonstandard legacy JavaScript parsing can differ; prefer ISO strings for interchange.
 
 ```sh
-TZ=America/Los_Angeles ./cdate 2010-01-11                         # A1B
-TZ=America/Los_Angeles ./cdate --input-local --local 2010-01-11   # A1B
-TZ=America/Los_Angeles ./cdate --input-local --local -i javascript 2010-01-11
+TZ=America/Los_Angeles cdate 2010-01-11                         # A1B
+TZ=America/Los_Angeles cdate --input-local --local 2010-01-11   # A1B
+TZ=America/Los_Angeles cdate --input-local --local -i javascript 2010-01-11
 # A1A: JavaScript interprets this ISO date-only string as UTC
 ```
 
@@ -184,8 +190,8 @@ Use ISO output for interchange, or select `mdy`/`dmy` for a numeric locale date.
 ## ddate output and options
 
 ```text
-./ddate [OPTIONS] CODE [ZONE] [+FORMAT]
-./ddate [OPTIONS] --date 'CODE [ZONE]' [+FORMAT]
+ddate [OPTIONS] CODE [ZONE] [+FORMAT]
+ddate [OPTIONS] --date 'CODE [ZONE]' [+FORMAT]
 ```
 
 `ddate` assumes midnight on the decoded calendar day in the input zone, then formats that instant in the output zone. An explicit `--input-*` option chooses the input zone. Otherwise, a zone supplied with the code chooses it; with neither, the input zone is UTC. The output zone defaults to UTC independently.
@@ -220,13 +226,13 @@ An optional input zone can be an IANA name such as `America/Los_Angeles`, a UTC 
 Numeric offsets accept `+HH`, `+HHMM`, or `+HH:MM` and their negative equivalents. Hours must be 00–23 and minutes 00–59. Negative offsets supplied as separate arguments require `--` before them; attaching them to the code is simpler.
 
 ```sh
-./ddate A1B America/Los_Angeles '+%F %T %z'
+ddate A1B America/Los_Angeles '+%F %T %z'
 # 2010-01-11 08:00:00 +0000
-./ddate --date 'A1B Asia/Tokyo' '+%F %T %z'
+ddate --date 'A1B Asia/Tokyo' '+%F %T %z'
 # 2010-01-10 15:00:00 +0000
-./ddate A1B+05:30 '+%F %T %z'
+ddate A1B+05:30 '+%F %T %z'
 # 2010-01-10 18:30:00 +0000
-./ddate A1B+05:30 --input-utc '+%F %T %z'
+ddate A1B+05:30 --input-utc '+%F %T %z'
 # 2010-01-11 00:00:00 +0000
 ```
 
@@ -237,21 +243,21 @@ A standalone positive numeric offset accompanying a bare code is treated as its 
 ### Output formats
 
 ```sh
-./ddate A1B -I                         # 2010-01-11
-./ddate -u A1B -Iseconds                # 2010-01-11T00:00:00+00:00
-./ddate -u A1B --rfc-3339 seconds       # 2010-01-11 00:00:00+00:00
-./ddate -u A1B -R                      # Mon, 11 Jan 2010 00:00:00 +0000
-./ddate -u A1B '+%F %T %z'              # 2010-01-11 00:00:00 +0000
+ddate A1B -I                         # 2010-01-11
+ddate -u A1B -Iseconds                # 2010-01-11T00:00:00+00:00
+ddate -u A1B --rfc-3339 seconds       # 2010-01-11 00:00:00+00:00
+ddate -u A1B -R                      # Mon, 11 Jan 2010 00:00:00 +0000
+ddate -u A1B '+%F %T %z'              # 2010-01-11 00:00:00 +0000
 ```
 
 With `TZ=America/Los_Angeles`, changing each zone has these results:
 
 ```sh
-./ddate A1B --local '+%F %T %z'
+ddate A1B --local '+%F %T %z'
 # 2010-01-10 16:00:00 -0800: UTC midnight displayed locally
-./ddate A1B --input-local '+%F %T %z'
+ddate A1B --input-local '+%F %T %z'
 # 2010-01-11 08:00:00 +0000: local midnight displayed in UTC
-./ddate A1B --input-local --local '+%F %T %z'
+ddate A1B --input-local --local '+%F %T %z'
 # 2010-01-11 00:00:00 -0800: local midnight displayed locally
 ```
 
@@ -270,22 +276,22 @@ Normal stdout contains only the requested code or formatted result. Output ends 
 Examples of rejected input:
 
 ```sh
-./cdate 2010-02-30                     # Impossible calendar date
-./cdate 1999-12-31                     # Before the supported range
-./cdate 2062-01-01                     # After the supported range
-./ddate A2T                           # February 29 in a non-leap year
-./ddate A0B                           # Month zero
-./ddate A1W                           # Day 32
-./ddate A1B --unknown                  # Unknown option
+cdate 2010-02-30                     # Impossible calendar date
+cdate 1999-12-31                     # Before the supported range
+cdate 2062-01-01                     # After the supported range
+ddate A2T                           # February 29 in a non-leap year
+ddate A0B                           # Month zero
+ddate A1W                           # Day 32
+ddate A1B --unknown                  # Unknown option
 ```
 
-Both commands use strict Node `parseArgs` parsing, reject duplicate singleton options, and flush standard-stream writes before returning. Inputs are passed to `date` as argument values through `execFile`, without shell interpolation. Each `date` subprocess has a five-second timeout and a one-MiB output limit. Neither command changes the system clock or makes network requests.
+Both implementations reject unknown and duplicate singleton options and flush standard-stream writes before returning. Inputs are passed directly to `date` as argument values without shell interpolation. Each `date` subprocess has a five-second timeout and a one-MiB output limit. Neither command changes the system clock or makes network requests.
 
 Enable diagnostic logging with `-d` or `--debug`:
 
 ```sh
-./cdate --debug 2010-01-11
-./ddate --debug A1B +%F
+cdate --debug 2010-01-11
+ddate --debug A1B +%F
 ```
 
 The log is named `_YYYYMMDD_HHMMSS_cdate.log` or `_YYYYMMDD_HHMMSS_ddate.log` in the current directory. Its timestamp uses local time, independently of the input and output zones. The executable basename determines the final name if a command is renamed. Files are created exclusively with mode `0600`; an existing same-second name causes an error and is never overwritten.
@@ -296,19 +302,18 @@ Argument-parser failures happen before the log is opened. Help and version never
 
 ## Development and verification
 
-The first two lines form the shell/TypeScript bootstrap. `/bin/sh` opens the executable itself on stdin and replaces its process with `node --input-type=module-typescript -`, forwarding arguments unchanged. `STANDALONE_SCRIPT_NAME` preserves the invoked filename. The runtime strips erasable type syntax; it does not typecheck it.
+[AGENTS.md](AGENTS.md) describes repository conventions and compatibility requirements. Keep common behavior tests in `tests/date-tools.test.mjs` and run them for every implementation whenever behavior changes. Language-specific unit tests supplement that suite; they do not replace it.
 
-Use the standalone CLI skill's bundled checker for strict validation. It obtains TypeScript and Node typings in an isolated `npx` environment, creates a private temporary `.ts` copy, checks it with strict erasable-syntax settings, and removes its temporary files. The first run may download the checker dependencies.
+Run the complete check from the repository root:
 
 ```sh
-CHECKER="$HOME/.codex/skills/build-standalone-ts-cli/scripts/typecheck-cli"
-timeout 60s "$CHECKER" ./cdate
-timeout 60s "$CHECKER" ./ddate
-timeout 60s node --test tests/date-tools.test.mjs
+timeout 120s tests/run-tests.sh
 ```
 
-Both commands contain no `any` types. The tests exercise all 22,646 valid date round-trips and all 238,328 three-character combinations, compare formatting against the installed `date`, and cover the requested inputs, year transitions, invalid calendars, epoch precision, independent input/output zones, JavaScript zone semantics, DST gaps, reference metadata, argument errors, help without `date`, private debug logs, collision protection, and executable paths containing spaces. The test harness uses Node's type-stripping API to inspect the actual pure helpers; that API can emit an experimental warning independently of command execution.
+The runner checks its Bash script with ShellCheck, validates both TypeScript files with the standalone CLI skill's bundled checker, checks Rust formatting and Clippy warnings, runs Rust unit tests, builds release binaries, and runs the same CLI cases against TypeScript and Rust. Development needs Node.js, Cargo with rustfmt and Clippy, ShellCheck, and `timeout`. The bundled TypeScript checker must be available at `$HOME/.codex/skills/build-standalone-ts-cli/scripts/typecheck-cli`; its first run may download isolated checker dependencies.
 
-Inspect the bootstrap separately when using ShellCheck. The executable's TypeScript body is not shell syntax and must be validated by the bundled checker. Do not run ShellCheck on the complete polyglot file. The extracted bootstrap passes with `SC2094` excluded: that rule mistakes the `STANDALONE_SCRIPT_NAME="$0"` environment assignment for a write to the source file, although the bootstrap only reads it.
+The calendar unit tests cover all 22,646 valid date round-trips and all 238,328 three-character combinations in both languages. The shared suite compares formatting against the installed `date` and covers requested inputs, year transitions, invalid calendars, epoch precision, independent input/output zones, JavaScript zone semantics, DST gaps, reference metadata, argument errors, help without `date`, private debug logs, collision protection, and executable paths containing spaces. Backend fixtures verify timeout and output limits, failed parsing, skipped clocks, and literal format arguments.
 
-The [offline interactive walkthrough](date-tools-walkthrough.html) explains the command flow with code excerpts, selectable help and terminal examples, a compact-date calculator, and the validation rules. Open it directly in a browser; it has no external assets and never executes the commands.
+See the [TypeScript development notes](impl_ts/README.md) for the stdin bootstrap, strict typechecking, and extracted ShellCheck validation, and the [Rust development notes](impl_rust/README.md) for build settings, dependencies, and focused checks. Shared help lives in `docs/`; synchronize its standalone TypeScript copies, the man pages, and walkthrough when changing options.
+
+The [offline interactive walkthrough](date-tools-walkthrough.html) explains the common command flow with TypeScript code excerpts, selectable help and terminal examples, a compact-date calculator, and the validation rules. Open it directly in a browser; it has no external assets and never executes the commands.
